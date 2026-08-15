@@ -92,7 +92,11 @@ class BinancePlugin(HTTPAPIPluginTemplate):
                 '1hour': '1h', '2hour': '2h', '4hour': '4h', '6hour': '6h', '8hour': '8h', '12hour': '12h',
                 'daily': '1d', 'D': '1d',
                 'weekly': '1w', 'W': '1w',
-                'monthly': '1M', 'M': '1M'
+                'monthly': '1M', 'M': '1M',
+                # R275 补齐系统标准周期键（UDM/Period 传值），防静默回退日线
+                '1': '1m', '5': '5m', '15': '15m', '30': '30m', '60': '60m',
+                '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '60m': '60m',
+                '1H': '1h', '1h': '1h'
             },
 
             # 限流配置（币安：1200次/分钟 = 20次/秒）

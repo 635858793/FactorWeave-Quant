@@ -36,6 +36,9 @@ class ZoomMixin:
         self._zoom_rect = self.price_ax.axvspan(
             event.xdata, event.xdata, color='blue', alpha=0.18)
         self.canvas.draw_idle()
+        # R265: 全量重绘后十字光标blit背景失效
+        if hasattr(self, '_invalidate_crosshair_background'):
+            self._invalidate_crosshair_background()
 
     def _on_zoom_motion(self, event):
         """处理缩放拖动事件 - 只在拖拽状态下处理，避免与十字光标冲突"""
@@ -60,6 +63,9 @@ class ZoomMixin:
         self._zoom_rect = self.price_ax.axvspan(
             x0, x1, color='blue', alpha=0.18)
         self.canvas.draw_idle()
+        # R265: 全量重绘后十字光标blit背景失效
+        if hasattr(self, '_invalidate_crosshair_background'):
+            self._invalidate_crosshair_background()
 
     def _on_zoom_release(self, event):
         """处理缩放释放事件"""
@@ -72,6 +78,8 @@ class ZoomMixin:
         if abs(x1 - x0) < 1:  # 拖动太短不缩放
             self._zoom_press_x = None
             self.canvas.draw_idle()
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
             return
         if x1 > x0:
             # 左→右：放大
@@ -107,7 +115,9 @@ class ZoomMixin:
         self._limit_xlim()
         self._zoom_press_x = None
         self.canvas.draw_idle()
-        self._optimize_display()  # 保证缩放后也恢复网格和刻度
+        # R265 性能：移除防御性_optimize_display调用 + 标记blit背景失效
+        if hasattr(self, '_invalidate_crosshair_background'):
+            self._invalidate_crosshair_background()
 
     def _on_zoom_right_click(self, event):
         """处理右键点击事件 - 支持拖拽和双击还原"""
@@ -126,7 +136,9 @@ class ZoomMixin:
                     self.price_ax.set_ylim(ymin, ymax)
                 self._zoom_history.clear()
                 self.canvas.draw_idle()
-                self._optimize_display()
+                # R265 性能：移除防御性_optimize_display调用 + 标记blit背景失效
+                if hasattr(self, '_invalidate_crosshair_background'):
+                    self._invalidate_crosshair_background()
                 self._last_right_click_time = 0
                 return
             # 记录本次点击
@@ -153,6 +165,9 @@ class ZoomMixin:
         self.price_ax.set_xlim(left - dx, right - dx)
         self._limit_xlim()
         self.canvas.draw_idle()
+        # R265: 全量重绘后十字光标blit背景失效
+        if hasattr(self, '_invalidate_crosshair_background'):
+            self._invalidate_crosshair_background()
 
     def _on_zoom_scroll(self, event):
         """处理滚轮缩放事件"""
@@ -168,7 +183,10 @@ class ZoomMixin:
         self.price_ax.set_xlim(left, right)
         self._limit_xlim()
         self.canvas.draw_idle()
-        self._optimize_display()  # 保证滚轮缩放后也恢复网格和刻度
+        # R265 性能：set_xlim不影响网格/刻度，移除_optimize_display高频调用
+        # （该防御代码每滚一格执行一次，纯浪费）；并标记十字光标blit背景失效
+        if hasattr(self, '_invalidate_crosshair_background'):
+            self._invalidate_crosshair_background()
 
     def async_update_chart(self, data: dict, n_segments: int = 20):
         """异步更新图表 - 多线程分段预处理实现"""

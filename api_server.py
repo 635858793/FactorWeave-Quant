@@ -106,6 +106,35 @@ def rate_limit_check(client_ip: str, max_requests: int = 60, window: int = 60) -
     return True
 
 
+def _generate_backtest_risk_report(returns, portfolio_weights=None, trading_volumes=None):
+    """R273-C (2026-08-09): 回测结果后处理 → RiskEvaluator 四维综合风险报告。
+
+    Why: RiskEvaluator.generate_comprehensive_risk_report 此前全仓库 0 消费
+         (R273 高价值死代码, 价值 7/10, 无同等功能等价物), 接入回测接口形成
+         真实调用链: 回测完成 → 提取 returns 序列 → 生成综合风险报告 → 附加结果。
+    Args:
+        returns: 策略收益率序列 (pd.Series)
+        portfolio_weights: 组合权重 dict (组合回测时传入, 触发集中度 HHI 评估)
+        trading_volumes: 交易量序列 (可选, 触发流动性评估)
+    Returns:
+        综合风险报告 dict (market/concentration/liquidity/operational 四维 +
+        risk_summary/recommendations/overall_risk_level); 失败降级返回 None,
+        不阻断回测结果返回 (db_path 默认 data/factorweave_system.sqlite,
+        生产环境存在; 缺失时模型风险指标内部降级跳过)。
+    """
+    try:
+        from evaluation.risk_evaluation import create_risk_evaluator
+        evaluator = create_risk_evaluator()
+        return evaluator.generate_comprehensive_risk_report(
+            returns=returns,
+            portfolio_weights=portfolio_weights,
+            trading_volumes=trading_volumes
+        )
+    except Exception as e:
+        logger.warning(f"生成回测风险报告失败(降级, 不影响回测结果): {e}")
+        return None
+
+
 _default_key_warning = False
 _env_key = os.environ.get("HIKYUU_API_KEY")
 if _env_key:
@@ -187,6 +216,16 @@ def run_backtest(params: Dict[str, Any]):
         if UnifiedBacktestEngine is None:
             return {"result": "error", "error": "回测引擎不可用", "metrics": {}}
 
+        # R273-B (2026-08-09): 组合回测分支 —— 多股票组合权重 + D/M/Q/BH 再平衡。
+        # Why: PortfolioBacktestEngine 此前全仓库 0 消费 (R273 高价值死代码,
+        #      价值 8/10, 无同等功能等价物), 接入回测接口形成真实调用链。
+        # 请求格式: { 'portfolio_mode': True,
+        #             'portfolio_data': {code: List[Dict] 或 {data: List[Dict]}},
+        #             'portfolio_weights': {code: weight}, 'rebalance_frequency': 'M',
+        #             'initial_capital': 1000000, 'backtest_level': 'professional' }
+        if params.get('portfolio_mode') and params.get('portfolio_data'):
+            return _run_portfolio_backtest(params)
+
         stock_data = params.get('data', [])
         if not stock_data:
             return {"result": "error", "error": "数据不能为空", "metrics": {}}
@@ -229,11 +268,114 @@ def run_backtest(params: Dict[str, Any]):
             max_holding_periods=max_holding_periods
         )
 
+        # R273-C (2026-08-09): 回测结果后处理 → RiskEvaluator 综合风险报告
+        # (从策略净值曲线提取收益序列, 生成四维风险评估附加到结果)。
+        try:
+            equity_curve = result.get('equity_curve') if isinstance(result, dict) else None
+            if equity_curve is not None and len(equity_curve) > 1:
+                returns_series = pd.Series(equity_curve).pct_change().dropna()
+                if len(returns_series) > 1:
+                    result['risk_report'] = _generate_backtest_risk_report(returns_series)
+        except Exception as risk_err:
+            logger.warning(f"回测风险报告附加失败(降级, 不影响回测结果): {risk_err}")
+
         logger.info(f"回测完成，结果: {list(result.keys()) if isinstance(result, dict) else '非dict'}")
         return {"result": "success", "metrics": result}
 
     except Exception as e:
         logger.error(f"回测执行失败: {e}")
+        return {"result": "error", "error": str(e), "metrics": {}}
+
+
+def _run_portfolio_backtest(params: Dict[str, Any]) -> Dict[str, Any]:
+    """R273-B (2026-08-09): 组合回测执行 —— 真实调用链:
+    create_portfolio_backtest_engine → run_portfolio_backtest → 风险报告后处理。
+
+    请求格式:
+        portfolio_mode: True (run_backtest 分支已校验)
+        portfolio_data: {code: List[Dict]} 或 {code: {data: List[Dict]}},
+                        每行含 date + close (或 returns)
+        portfolio_weights: {code: 权重}
+        rebalance_frequency: 'D'|'M'|'Q'|'BH' (默认 'M')
+        initial_capital: 初始资金 (默认 1000000)
+        backtest_level: 'basic'|'professional'|'institutional'|'investment_bank'
+    """
+    try:
+        from backtest.unified_backtest_engine import create_portfolio_backtest_engine
+
+        portfolio_data_raw = params.get('portfolio_data') or {}
+        if not isinstance(portfolio_data_raw, dict) or not portfolio_data_raw:
+            return {"result": "error", "error": "组合数据不能为空", "metrics": {}}
+
+        weights = params.get('portfolio_weights') or {}
+        if not weights:
+            return {"result": "error", "error": "组合权重不能为空", "metrics": {}}
+
+        # {code: List[Dict] 或 {data: List[Dict]}} → {code: DataFrame(index=DatetimeIndex)}
+        portfolio_data = {}
+        first_volumes = None
+        for code, rows in portfolio_data_raw.items():
+            if isinstance(rows, dict):
+                rows = rows.get('data', [])
+            if not rows:
+                continue
+            df = pd.DataFrame(rows)
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+                df.set_index('date', inplace=True)
+            elif not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+            if 'close' not in df.columns and 'returns' not in df.columns:
+                continue
+            if 'volume' in df.columns and first_volumes is None:
+                first_volumes = pd.Series(df['volume'].values, index=df.index, dtype=float)
+            portfolio_data[code] = df
+
+        if not portfolio_data:
+            return {"result": "error", "error": "组合数据缺少 close/returns 列", "metrics": {}}
+
+        level = params.get('backtest_level', 'professional')
+        initial_capital = float(params.get('initial_capital', 1000000))
+        rebalance_frequency = params.get('rebalance_frequency', 'M')
+
+        # 真实实例化 + 真实组合回测
+        engine = create_portfolio_backtest_engine(level=level)
+        result = engine.run_portfolio_backtest(
+            portfolio_data=portfolio_data,
+            weights=weights,
+            rebalance_frequency=rebalance_frequency,
+            initial_capital=initial_capital
+        )
+
+        portfolio_metrics = result.get('portfolio_metrics', {})
+        portfolio_result = result.get('portfolio_result')
+
+        # 构建 JSON 安全返回 (DataFrame 不直接序列化)
+        metrics = {
+            'portfolio_mode': True,
+            'portfolio_metrics': portfolio_metrics,
+            'weights': result.get('weights', {}),
+            'stocks': list(portfolio_data.keys()),
+            'rebalance_frequency': rebalance_frequency,
+            'initial_capital': initial_capital,
+        }
+        if portfolio_result is not None and len(portfolio_result) > 0:
+            metrics['final_equity'] = float(portfolio_result['portfolio_value'].iloc[-1])
+            metrics['equity_curve'] = [float(x) for x in portfolio_result['portfolio_value'].tolist()]
+
+            # R273-C: 组合收益序列 → 综合风险报告 (含集中度 HHI + 流动性)
+            returns_series = portfolio_result['portfolio_returns'].dropna()
+            if len(returns_series) > 1:
+                metrics['risk_report'] = _generate_backtest_risk_report(
+                    returns_series,
+                    portfolio_weights=weights,
+                    trading_volumes=first_volumes
+                )
+
+        return {"result": "success", "metrics": metrics}
+
+    except Exception as e:
+        logger.error(f"组合回测执行失败: {e}")
         return {"result": "error", "error": str(e), "metrics": {}}
 
 

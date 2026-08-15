@@ -1654,8 +1654,6 @@ class AlertsPanel(QWidget):
         # parent_widget 会在外部设置，用于访问其他面板
         self.parent_widget = None
         self.alerts = []
-        self.risk_metrics_history = []
-        self.max_history_points = 50
         self.init_ui()
 
     def init_ui(self):
@@ -1714,70 +1712,6 @@ class AlertsPanel(QWidget):
         clear_button.clicked.connect(self.clear_alerts)
         layout.addWidget(clear_button)
 
-    def _init_risk_chart(self):
-        """初始化风险指标图表"""
-        self.risk_figure.clear()
-        
-        self.risk_ax = self.risk_figure.add_subplot(111)
-        self.risk_ax.set_facecolor('#1e2329')
-        self.risk_ax.tick_params(colors='white')
-        self.risk_ax.spines['bottom'].set_color('white')
-        self.risk_ax.spines['top'].set_color('white')
-        self.risk_ax.spines['left'].set_color('white')
-        self.risk_ax.spines['right'].set_color('white')
-        self.risk_ax.set_xlabel('时间点', color='white')
-        self.risk_ax.set_ylabel('指标值', color='white')
-        self.risk_ax.set_title('风险指标实时趋势', color='white')
-        
-        self.risk_canvas.draw()
-
-    def _update_risk_chart(self):
-        """更新风险指标图表"""
-        try:
-            if not self.risk_metrics_history:
-                return
-            
-            self.risk_ax.clear()
-            self.risk_ax.set_facecolor('#1e2329')
-            self.risk_ax.tick_params(colors='white')
-            self.risk_ax.spines['bottom'].set_color('white')
-            self.risk_ax.spines['top'].set_color('white')
-            self.risk_ax.spines['left'].set_color('white')
-            self.risk_ax.spines['right'].set_color('white')
-            
-            x = range(len(self.risk_metrics_history))
-            
-            var_values = [m.get('var_95', 0) * 100 for m in self.risk_metrics_history]
-            cvar_values = [m.get('cvar_95', 0) * 100 for m in self.risk_metrics_history]
-            drawdown_values = [m.get('max_drawdown', 0) * 100 for m in self.risk_metrics_history]
-            sharpe_values = [m.get('sharpe_ratio', 0) for m in self.risk_metrics_history]
-            
-            self.risk_ax.plot(x, var_values, 'r-', label='VaR(95%)', linewidth=2)
-            self.risk_ax.plot(x, cvar_values, 'orange', label='CVaR(95%)', linewidth=2)
-            self.risk_ax.plot(x, drawdown_values, 'y-', label='最大回撤', linewidth=2)
-            
-            ax2 = self.risk_ax.twinx()
-            ax2.plot(x, sharpe_values, 'g-', label='夏普比率', linewidth=2)
-            ax2.tick_params(colors='white')
-            ax2.spines['right'].set_color('white')
-            ax2.set_ylabel('夏普比率', color='white')
-            
-            self.risk_ax.set_xlabel('时间点', color='white')
-            self.risk_ax.set_ylabel('风险指标 (%)', color='white')
-            self.risk_ax.set_title('风险指标实时趋势', color='white')
-            
-            lines1, labels1 = self.risk_ax.get_legend_handles_labels()
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            self.risk_ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left', 
-                               facecolor='#2d3748', edgecolor='white', labelcolor='white')
-            
-            self.risk_ax.grid(True, alpha=0.3, color='white')
-            
-            self.risk_figure.tight_layout()
-            self.risk_canvas.draw()
-        except RuntimeError:
-            pass
-
     def add_alert(self, level: str, message: str):
         """添加预警"""
         try:
@@ -1823,12 +1757,8 @@ class AlertsPanel(QWidget):
             pass
 
     def update_risk_metrics(self, risk_metrics: Dict):
-        """更新风险指标显示"""
+        """更新风险指标显示（QLabel 标量展示）"""
         try:
-            self.risk_metrics_history.append(risk_metrics.copy())
-            if len(self.risk_metrics_history) > self.max_history_points:
-                self.risk_metrics_history.pop(0)
-            
             if not hasattr(self, 'risk_group'):
                 self.risk_group = QGroupBox("风险指标")
                 risk_layout = QFormLayout(self.risk_group)
@@ -1867,9 +1797,6 @@ class AlertsPanel(QWidget):
             self.sharpe_label.setText(f"{sharpe_ratio:.3f}")
             sharpe_color = "#10b981" if sharpe_ratio > 1.0 else "#f59e0b" if sharpe_ratio > 0 else "#ef4444"
             self.sharpe_label.setStyleSheet(f"color: {sharpe_color}; font-weight: bold;")
-            
-            if hasattr(self, 'risk_ax') and self.risk_ax is not None:
-                self._update_risk_chart()
             
         except RuntimeError as e:
             if "wrapped C/C++ object" in str(e):
@@ -1946,14 +1873,11 @@ class ProfessionalBacktestWidget(QWidget):
         # 初始化风险管理器
         try:
             from core.risk_manager import RiskManager
-            from core.risk_metrics import RiskMetricsCalculator
             self.risk_manager = RiskManager()
-            self.risk_metrics_calculator = RiskMetricsCalculator()
             logger.info("风险管理器初始化成功")
         except Exception as e:
             logger.warning(f"无法初始化风险管理器: {e}")
             self.risk_manager = None
-            self.risk_metrics_calculator = None
 
         # 风险监控相关变量
         self.risk_metrics = {}
@@ -3206,11 +3130,6 @@ class ProfessionalBacktestWidget(QWidget):
                     self.metrics_panel.update_metrics(results)
                     logger.info("回测指标面板已更新")
                 
-                # 更新风险指标面板（如果存在）
-                if hasattr(self, 'risk_metrics_panel') and self.risk_metrics_panel:
-                    self.risk_metrics_panel.update_risk_metrics(results)
-                    logger.info("风险指标面板已更新")
-                
                 # 更新图表 - 使用事件驱动的实时推送方式
                 if hasattr(self, 'chart_widget') and self.chart_widget:
                     # 从回测结果中提取 equity_curve 数据
@@ -3927,58 +3846,6 @@ class ProfessionalBacktestWidget(QWidget):
                 self.alerts_panel.add_alert('warning', f"夏普比率 {sharpe:.2f} 低于 {sharpe_threshold:.2f}")
         except Exception as e:
             logger.error(f"检查关键预警失败: {e}")
-
-    def _calculate_and_update_risk_metrics(self, data: Dict):
-        """计算并更新风险指标 - 性能优化版本"""
-        try:
-            if not self.risk_metrics_calculator:
-                return
-            
-            if 'returns' not in data or not data['returns']:
-                return
-            
-            returns = data.get('returns', [])
-            if len(returns) < 10:
-                return
-            
-            returns_tuple = tuple(returns[-100:]) if len(returns) > 100 else tuple(returns)
-            returns_hash = hash(returns_tuple)
-            
-            if hasattr(self, '_last_risk_returns_hash') and self._last_risk_returns_hash == returns_hash:
-                return
-            
-            self._last_risk_returns_hash = returns_hash
-            
-            import pandas as pd
-            import numpy as np
-            returns_series = pd.Series(returns)
-            
-            var_95 = self.risk_metrics_calculator.calculate_value_at_risk(returns_series, 0.95)
-            cvar_95 = self.risk_metrics_calculator.calculate_conditional_var(returns_series, 0.95)
-            max_drawdown = data.get('max_drawdown', 0)
-            volatility = data.get('volatility', 0)
-            sharpe_ratio = data.get('sharpe_ratio', 0)
-            
-            new_metrics = {
-                'var_95': var_95,
-                'cvar_95': cvar_95,
-                'max_drawdown': max_drawdown,
-                'volatility': volatility,
-                'sharpe_ratio': sharpe_ratio
-            }
-            
-            if hasattr(self, 'risk_metrics') and self.risk_metrics == new_metrics:
-                return
-            
-            self.risk_metrics = new_metrics
-            
-            self._check_risk_alerts()
-            
-            if hasattr(self, 'alerts_panel') and self.alerts_panel:
-                self.alerts_panel.update_risk_metrics(self.risk_metrics)
-                
-        except Exception as e:
-            logger.error(f"计算风险指标失败: {e}")
 
     def _check_risk_alerts(self):
         """检查风险预警"""

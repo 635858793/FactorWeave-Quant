@@ -31,9 +31,6 @@ from collections import defaultdict
 from ..risk.compliance_audit_logger import (
     ComplianceLevel, AuditLevel, AuditRecord, EventType, ComplianceFlag
 )
-from ..risk_control import (
-    RiskMonitor, RiskReportGenerator, RiskControlStrategy
-)
 
 # AI选股相关服务
 from .ai_selection_integration_service import (
@@ -296,15 +293,6 @@ class AISelectionRiskControlService:
         self._personalization_engine = personalization_engine
         self._indicator_service = indicator_service
         self._risk_control_level = risk_control_level
-        
-        # 风险监控器
-        self._risk_monitor = RiskMonitor()
-        
-        # 风险报告生成器
-        self._report_generator = RiskReportGenerator()
-        
-        # 风险控制管理器
-        self._risk_control_manager = RiskControlStrategy()
         
         # 风险历史记录
         self._risk_history: List[AIStockRiskMetrics] = []

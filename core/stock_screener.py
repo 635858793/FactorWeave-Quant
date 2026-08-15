@@ -121,23 +121,23 @@ class StockScreener:
                 try:
                     # 计算MA
                     ma_result = calculate_indicator(
-                        "MA", kdata, {"timeperiod": 5})
+                        "MA", kdata, timeperiod=5)
                     indicator_values['MA'] = ma_result['MA']
 
                     # 计算EMA
                     ema_result = calculate_indicator(
-                        "EMA", kdata, {"timeperiod": 12})
+                        "EMA", kdata, timeperiod=12)
                     indicator_values['EMA'] = ema_result['EMA']
 
                     # 计算MACD
-                    macd_result = calculate_indicator("MACD", kdata, {})
+                    macd_result = calculate_indicator("MACD", kdata)
                     indicator_values['MACD'] = macd_result['MACD']
-                    indicator_values['MACD_SIGNAL'] = macd_result['MACD_SIGNAL']
-                    indicator_values['MACD_HIST'] = macd_result['MACD_HIST']
+                    indicator_values['MACD_SIGNAL'] = macd_result['MACDSignal']
+                    indicator_values['MACD_HIST'] = macd_result['MACDHist']
 
                     # 计算RSI
                     rsi_result = calculate_indicator(
-                        "RSI", kdata, {"timeperiod": 14})
+                        "RSI", kdata, timeperiod=14)
                     indicator_values['RSI'] = rsi_result['RSI']
                 except Exception as e:
                     logger.warning(

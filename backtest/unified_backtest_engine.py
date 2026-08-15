@@ -254,15 +254,11 @@ class UnifiedBacktestEngine:
 
         # 初始化所有优化引擎
         self.vectorized_engine = None
-        self.parallel_engine = None
-        self.memory_optimized_engine = None
-        self.professional_optimizer = None
 
         if self.use_vectorized_engine:
             try:
                 from backtest.backtest_optimizer import (
-                    VectorizedBacktestEngine, ParallelBacktestEngine,
-                    MemoryOptimizedBacktestEngine, ProfessionalBacktestOptimizer,
+                    VectorizedBacktestEngine,
                     BacktestOptimizationLevel
                 )
                 optimization_level = BacktestOptimizationLevel.PROFESSIONAL
@@ -273,18 +269,6 @@ class UnifiedBacktestEngine:
 
                 from core.jit_warmup import warmup_all_jit_functions
                 warmup_all_jit_functions()
-
-                # 初始化并行引擎
-                self.parallel_engine = ParallelBacktestEngine(optimization_level=optimization_level)
-                self.logger.info("并行引擎初始化成功")
-
-                # 初始化内存优化引擎
-                self.memory_optimized_engine = MemoryOptimizedBacktestEngine(optimization_level=optimization_level)
-                self.logger.info("内存优化引擎初始化成功")
-
-                # 初始化专业优化器
-                self.professional_optimizer = ProfessionalBacktestOptimizer(optimization_level)
-                self.logger.info("专业优化器初始化成功")
 
             except ImportError as e:
                 self.logger.warning(f"优化引擎导入失败，将使用标准引擎: {e}")
@@ -733,95 +717,6 @@ class UnifiedBacktestEngine:
                 data, signal_col, price_col, initial_capital,
                 position_size, commission_pct, slippage_pct, min_commission,
                 None, None, None, True  # 使用默认参数
-            )
-
-    def _run_memory_optimized_backtest(self, data: pd.DataFrame, signal_col: str, price_col: str,
-                                       initial_capital: float, position_size: float,
-                                       commission_pct: float, slippage_pct: float, min_commission: float) -> pd.DataFrame:
-        """
-        使用内存优化引擎运行回测
-        """
-        try:
-            self.logger.info("使用内存优化引擎执行回测")
-
-            # 定义简单策略函数
-            def strategy_func(chunk_data, **kwargs):
-                return chunk_data  # 数据已包含信号
-
-            # 调用内存优化引擎
-            result = self.memory_optimized_engine.run_chunked_backtest(
-                data=data,
-                strategy_func=strategy_func,
-                initial_capital=initial_capital,
-                position_size=position_size,
-                commission_pct=commission_pct,
-                slippage_pct=slippage_pct
-            )
-
-            # 转换结果格式
-            if isinstance(result, pd.DataFrame):
-                if 'capital' not in result.columns and 'equity' in result.columns:
-                    result['capital'] = result['equity']
-                elif 'capital' not in result.columns:
-                    # 如果没有capital或equity列，创建一个基本的capital列
-                    result['capital'] = initial_capital
-
-            self.logger.info(f"内存优化回测完成")
-            return result
-
-        except Exception as e:
-            self.logger.error(f"内存优化回测失败: {e}")
-            # 降级到向量化引擎
-            return self._run_vectorized_backtest(
-                data, signal_col, price_col, initial_capital,
-                position_size, commission_pct, slippage_pct, min_commission
-            )
-
-    def _run_professional_optimized_backtest(self, data: pd.DataFrame, signal_col: str, price_col: str,
-                                             initial_capital: float, position_size: float,
-                                             commission_pct: float, slippage_pct: float, min_commission: float) -> pd.DataFrame:
-        """
-        使用专业优化器运行回测
-        """
-        try:
-            self.logger.info("使用专业优化器执行回测")
-
-            # 定义简单策略函数
-            def strategy_func(chunk_data, **kwargs):
-                return chunk_data  # 数据已包含信号
-
-            # 调用专业优化器
-            result, metrics = self.professional_optimizer.optimize_backtest_execution(
-                data=data,
-                strategy_func=strategy_func,
-                auto_select_engine=True,
-                initial_capital=initial_capital,
-                position_size=position_size,
-                commission_pct=commission_pct,
-                slippage_pct=slippage_pct
-            )
-
-            # 转换结果格式
-            if isinstance(result, pd.DataFrame):
-                if 'capital' not in result.columns and 'equity' in result.columns:
-                    result['capital'] = result['equity']
-                elif 'capital' not in result.columns:
-                    # 如果没有capital或equity列，创建一个基本的capital列
-                    result['capital'] = initial_capital
-
-            # 记录性能指标
-            if hasattr(metrics, 'execution_time') and hasattr(metrics, 'memory_usage'):
-                self.logger.info(f"专业优化回测完成 - 执行时间: {metrics.execution_time:.4f}秒, 内存使用: {metrics.memory_usage:.2f}%")
-            else:
-                self.logger.info("专业优化回测完成")
-            return result
-
-        except Exception as e:
-            self.logger.error(f"专业优化回测失败: {e}")
-            # 降级到向量化引擎
-            return self._run_vectorized_backtest(
-                data, signal_col, price_col, initial_capital,
-                position_size, commission_pct, slippage_pct, min_commission
             )
 
     def _ensure_datetime_index(self, data: pd.DataFrame):
@@ -1418,11 +1313,6 @@ class UnifiedBacktestEngine:
         trade_state['entry_value'] = 0.0
         trade_state['holding_periods'] = 0
 
-    def _update_account_status(self, results: pd.DataFrame, i: int,
-                               trade_state: Dict[str, Any], current_price: float):
-        """更新账户状态 - 已废弃，使用 _update_account_status_numpy"""
-        self._update_account_status_numpy(None, None, i, trade_state, current_price)
-
     def _update_account_status_numpy(self, capital_array: 'np.ndarray', equity_array: 'np.ndarray',
                                      i: int, trade_state: Dict[str, Any], current_price: float):
         """更新账户状态（使用预分配的numpy数组，避免DataFrame .loc开销）"""
@@ -1840,8 +1730,7 @@ class UnifiedBacktestEngine:
                 if hasattr(self.risk_manager, 'dispose'):
                     self.risk_manager.dispose()
                 self.risk_manager = None
-            for attr in ('vectorized_engine', 'parallel_engine',
-                         'memory_optimized_engine', 'professional_optimizer'):
+            for attr in ('vectorized_engine',):
                 if hasattr(self, attr):
                     setattr(self, attr, None)
             self._disposed = True
@@ -2019,7 +1908,7 @@ class PortfolioBacktestEngine:
         portfolio_returns = []
         current_weights = pd.Series(weights)
 
-        for month_group in returns_df.groupby(pd.Grouper(freq='M')):
+        for month_group in returns_df.groupby(pd.Grouper(freq='ME')):
             month_data = month_group[1]
             if len(month_data) == 0:
                 continue
@@ -2035,7 +1924,7 @@ class PortfolioBacktestEngine:
         portfolio_returns = []
         current_weights = pd.Series(weights)
 
-        for quarter_group in returns_df.groupby(pd.Grouper(freq='Q')):
+        for quarter_group in returns_df.groupby(pd.Grouper(freq='QE')):
             quarter_data = quarter_group[1]
             if len(quarter_data) == 0:
                 continue

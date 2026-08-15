@@ -226,6 +226,10 @@ class TestTetPipelineSourceTimeout(unittest.TestCase):
         pipeline._adapters['ok_source'] = ok_adapter
         pipeline.router.get_available_sources = MagicMock(
             return_value=['hang_source', 'ok_source'])
+        # R286 起生产代码优先 get_prioritized_sources（tet_data_pipeline.py L576-586），
+        # 真实 router 未播种数据源时会返回空导致 failover 立即失败，需一并 mock。
+        pipeline.router.get_prioritized_sources = MagicMock(
+            return_value=['hang_source', 'ok_source'])
 
         routing_request = RoutingRequest(
             asset_type=AssetType.STOCK_A,

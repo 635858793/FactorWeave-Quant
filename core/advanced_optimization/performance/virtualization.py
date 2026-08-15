@@ -95,6 +95,18 @@ class VirtualRenderStyle:
     # 特定图表类型样式（可选）
     candle_up_color: str = '#ff0000'  # K线阳线颜色
     candle_down_color: str = '#00ff00'  # K线阴线颜色
+    candle_limit_up_color: str = '#FF9800'  # K线涨停颜色（橙色）
+    candle_limit_down_color: str = '#AB47BC'  # K线跌停颜色（紫色）
+
+    # 成交量四色（R292：涨红/跌绿/涨停橙/跌停紫，与 K 线判定一致）
+    # volume_* 专属键优先，未设置时回退到 K 线同款 up/down 键
+    up_color: str = '#ff0000'  # 涨（红）
+    down_color: str = '#00ff00'  # 跌（绿）
+    limit_up_color: str = '#FF9800'  # 涨停（橙）
+    limit_down_color: str = '#AB47BC'  # 跌停（紫）
+    volume_up_color: Optional[str] = None  # 成交量专属涨色，None 时回退 up_color
+    volume_down_color: Optional[str] = None  # 成交量专属跌色，None 时回退 down_color
+
     line_style: str = '-'  # 折线图线条样式
     point_size: float = 2.0  # 散点图点大小
 

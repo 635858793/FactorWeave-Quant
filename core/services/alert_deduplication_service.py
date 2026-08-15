@@ -108,7 +108,6 @@ class AlertDeduplicationService:
         # 告警存储
         self._alerts: Dict[str, AlertMessage] = {}
         self._alert_history: deque = deque(maxlen=10000)
-        self._fingerprint_cache: Dict[str, List[str]] = defaultdict(list)
 
         # 去重统计
         self._dedup_stats = {
@@ -163,7 +162,6 @@ class AlertDeduplicationService:
             # 存储告警
             self._alerts[alert.id] = alert
             self._alert_history.append(alert)
-            self._update_fingerprint_cache(alert)
 
             # 更新统计
             self._dedup_stats["total_alerts"] += 1
@@ -339,15 +337,6 @@ class AlertDeduplicationService:
         """生成告警ID"""
         content = f"{level.value}:{category}:{message}:{source}:{time.time()}"
         return hashlib.sha256(content.encode()).hexdigest()[:16]
-
-    def _update_fingerprint_cache(self, alert: AlertMessage) -> None:
-        """更新指纹缓存"""
-        fingerprint = alert.get_fingerprint()
-        self._fingerprint_cache[fingerprint].append(alert.id)
-
-        # 限制缓存大小
-        if len(self._fingerprint_cache[fingerprint]) > 100:
-            self._fingerprint_cache[fingerprint] = self._fingerprint_cache[fingerprint][-50:]
 
     def _start_cleanup_timer(self) -> None:
         """启动清理定时器"""

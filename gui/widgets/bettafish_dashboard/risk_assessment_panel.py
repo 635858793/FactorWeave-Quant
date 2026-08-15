@@ -13,9 +13,9 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, 
     QTableWidgetItem, QFrame, QGroupBox, QGridLayout, 
     QPushButton, QTabWidget, QTextEdit, QScrollArea,
-    QProgressBar, QLCDNumber, QDial, QDial
+    QProgressBar, QLCDNumber, QDial
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, pyqtSlot
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread, pyqtSlot, QPoint
 from PyQt5.QtGui import QFont, QColor, QPalette, QPixmap, QPainter, QBrush
 
 from loguru import logger
@@ -83,22 +83,6 @@ class RiskGauge(QWidget):
         painter.setBrush(QBrush(QColor(255, 255, 255)))
         painter.drawEllipse(center, 8, 8)
         
-        # 绘制刻度
-        painter.setPen(QColor(100, 100, 100))
-        for i in range(0, 101, 20):
-            angle = (i / 100) * 180 - 90
-            radian = angle * 3.14159 / 180
-            
-            x1 = center.x() + (radius - 5) * 1.0
-            y1 = center.y() - (radius - 5) * 0.0
-            x2 = center.x() + (radius - 15) * 1.0
-            y2 = center.y() - (radius - 15) * 0.0
-            
-            x1 = center.x() + (radius - 5) * 1.0
-            y1 = center.y() - (radius - 5) * 0.0
-            x2 = center.x() + (radius - 15) * 1.0
-            y2 = center.y() - (radius - 15) * 0.0
-            
         # 绘制数值
         painter.setFont(QFont("Arial", 10, QFont.Bold))
         painter.setPen(QColor(0, 0, 0))

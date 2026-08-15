@@ -253,7 +253,6 @@ def main():
         "OrderMonitor": "core/trading/order_monitor.py",
         "DataStandardizationEngine": "core/data_standardization_engine.py",
         "DataQualityRiskManager": "core/data_quality_risk_manager.py",
-        "IntelligentFailoverEngine": "core/intelligent_failover_engine.py",
         "StrategyManager": "core/trading/strategy_manager.py",
         "IndustryManager": "core/industry_manager.py",
     }

@@ -102,6 +102,9 @@ ORPHAN_EVENT_TYPES: tuple = (
     'TaskFailedEvent',  # thread_pool_manager.py:259 (动态类)
     'DataRefreshRequestedEvent',  # data_update_manager.py:274 (performance_events.py:231)
     'DataRefreshCompletedEvent',  # data_update_manager.py:350/374 (performance_events.py:247)
+    # R292 追加: 启动期漏注册的孤儿发布事件 (无订阅方, subscribe 自动注册不覆盖)
+    'StrategyConfigsLoadedEvent',  # strategy_service.py:533-538 (types.py:1091), 双发布已修仍保留单次发布
+    'service.orphan_scan_completed',  # service_bootstrap.py:357-364 步骤7.5 扫描完成事件
 )
 
 
@@ -276,12 +279,50 @@ class ServiceBootstrap:
             # 8. 输出重复检测报告
             self._report_duplicate_attempts()
 
+            # 8.5. R289: 启动恢复 GUI 持久化的 DuckDB 配置。
+            # 设置对话框保存的 duckdb.memory_limit_gb/duckdb.thread_count 此前
+            # 只在"保存设置"当次注入 manager 单例（R288），重启后丢失——此处
+            # 在 ConfigService 就绪后统一恢复注入，业务连接池（get_connection_manager
+            # 单例）随 apply_default_config 真正生效。
+            self._restore_duckdb_config_from_storage()
+
             logger.info("Service bootstrap completed successfully")
             return True
         except Exception as e:
             logger.error(f"[ERROR] 服务引导失败: {e}")
             logger.error(traceback.format_exc())
             raise  # 重新抛出异常，让调用方知道服务引导失败
+
+    def _restore_duckdb_config_from_storage(self) -> None:
+        """R289：启动时从 ConfigService 恢复 GUI 保存的 DuckDB 配置
+
+        设置对话框（settings_dialog）保存 duckdb.memory_limit_gb /
+        duckdb.thread_count 到 ConfigService（app_config.json + SQLite），
+        但此前仅"保存设置当次"注入 manager 单例，重启后丢失（R288 遗留）。
+        此处恢复注入 get_connection_manager() 单例——业务连接池（get_pool
+        config=None 分支）经 DuckDBConnectionPool._apply_config 真正生效。
+
+        幂等：从未保存过配置时 get() 返回 None，直接跳过。
+        """
+        try:
+            config_service = self.service_container.resolve(ConfigService)
+            memory_gb = config_service.get('duckdb.memory_limit_gb')
+            thread_count = config_service.get('duckdb.thread_count')
+            if not memory_gb or not thread_count:
+                logger.debug("未找到已保存的 DuckDB 配置，跳过启动恢复")
+                return
+
+            from core.database.duckdb_manager import get_connection_manager, DuckDBConfig
+            cfg = DuckDBConfig(
+                memory_limit=f"{memory_gb}GB",
+                threads=str(thread_count),
+            )
+            if get_connection_manager().apply_default_config(cfg):
+                logger.info(
+                    f"[BOOTSTRAP] 已恢复 GUI DuckDB 配置: "
+                    f"memory_limit={cfg.memory_limit} threads={cfg.threads}")
+        except Exception as e:
+            logger.debug(f"恢复 DuckDB 配置跳过（容器未就绪或无保存配置）: {e}")
 
     def _run_orphan_pub_scan_impl(self):
         """R237-A 实施: 启动期 ORPHAN_PUB 扫描 (R222 3 层治理 + R235 §14.2 5 类模式).
@@ -419,9 +460,16 @@ class ServiceBootstrap:
         logger.info("注册数据源路由器...")
         try:
             from ..data_source_router import DataSourceRouter
+
+            def _make_data_source_router():
+                # R283: 复用 R276 配置化工厂（读 config/data 段 health_check_interval
+                # 与 circuit_* 字段），原默认构造让配置文件中的熔断/健康检查参数全部失效
+                from core.services.unified_data_manager import _build_data_source_router
+                return _build_data_source_router()
+
             self.service_container.register_factory(
                 DataSourceRouter,
-                lambda: DataSourceRouter(),
+                _make_data_source_router,
                 scope=ServiceScope.SINGLETON
             )
             router = self.service_container.resolve(DataSourceRouter)
@@ -1495,6 +1543,79 @@ class ServiceBootstrap:
             else:
                 logger.warning("OrderExecutor已注册，跳过")
 
+            # R268-F1 (2026-08-09): 注册增强风控监控器。
+            # Why: 此前全仓库无注册点 → order_executor.py:785 try_resolve(EnhancedRiskMonitor)
+            #      恒 None → 集中度限制(max_concentration=0.5)/单笔金额限制(1000万)等增强风控
+            #      从未执行 (4 路子智能体交叉验证 + service_bootstrap 全文件无 EnhancedRiskMonitor 注册)。
+            # Fix: 参照 OrderExecutor (:1485-1496) 惰性工厂模式。sklearn 依赖延迟 import,
+            #      避免 bootstrap 模块级 import 失败拖垮启动; 实例在首次订单风控时创建。
+            try:
+                from core.risk_monitoring.enhanced_risk_monitor import EnhancedRiskMonitor
+                if not self._is_service_registered(EnhancedRiskMonitor):
+                    self.service_container.register_factory(
+                        EnhancedRiskMonitor,
+                        lambda: EnhancedRiskMonitor(),
+                        scope=ServiceScope.SINGLETON
+                    )
+                    logger.info("增强风控监控器注册完成")
+            except Exception as e:
+                logger.error(f"增强风控监控器注册失败(降级, 增强风控不可用): {e}")
+
+            # R273-A (2026-08-09): 注册高级风险控制服务。
+            # Why: 此前 AdvancedRiskControlService 全仓库 0 注册点/0 消费 (仅 drawio 图引用),
+            #      属 R273 高价值死代码 (价值 7/10, 无同等功能等价物), 用户已授权融入系统。
+            # Fix: 参照 EnhancedRiskMonitor (:1504-1514) 惰性工厂模式。sklearn 模型延迟 import,
+            #      避免 bootstrap 模块级 import 失败拖垮启动; 注入 service_container 使其内部
+            #      try_resolve(PositionRiskMonitor) 可解析活跃实例 (挂起实例已替换, R273 清理)。
+            #      惰性初始化不立即 resolve, 由使用方首次解析时创建 (此时 PositionRiskMonitor
+            #      已在 R269-D3 块注册完成, 顺序无关)。
+            try:
+                from core.services.advanced_risk_control_service import AdvancedRiskControlService
+                if not self._is_service_registered(AdvancedRiskControlService):
+                    self.service_container.register_factory(
+                        AdvancedRiskControlService,
+                        lambda: AdvancedRiskControlService(
+                            service_container=self.service_container
+                        ),
+                        scope=ServiceScope.SINGLETON
+                    )
+                    logger.info("高级风险控制服务注册完成")
+            except Exception as e:
+                logger.error(f"高级风险控制服务注册失败(降级, 高级风险控制不可用): {e}")
+
+            # R269-D2 (2026-08-09): 接线风险事件订阅器 —— 生产侧启动即初始化。
+            # Why: 此前 get_risk_event_subscriber() 全仓库 0 调用点 → RiskEventSubscriber
+            #      从未 initialize → risk.stop_trading / risk.emergency_liquidation 处理器
+            #      从未订阅 (原仅 log+审计, 无停止交易/平仓动作)。
+            # Fix: 启动时显式初始化订阅链 (stop_trading → OrderExecutor.halt_trading;
+            #      emergency_liquidation → OrderService.cancel_all_active_orders + halt)。
+            try:
+                from core.risk.risk_event_subscribers import get_risk_event_subscriber
+                get_risk_event_subscriber()
+                logger.info("风险事件订阅器初始化完成 (风控预警自动响应已启用)")
+            except Exception as e:
+                logger.error(f"风险事件订阅器初始化失败(降级, 预警自动响应不可用): {e}")
+
+            # R269-D3 (2026-08-09): 注册持仓风控执行器。
+            # Why: 整合 AdaptiveStopLoss/AdaptiveTakeProfit/EnhancedMoneyManager 三个
+            #      此前仅被死代码 TradeOrchestrator (risk_manager.py:506-723) 引用的组件
+            #      (TradingInstruction 全库无定义 → 组件从未生效); 并提供动态止损价
+            #      修复 order_executor 止损检查空转 (stop_loss_levels 唯一写入点零调用)。
+            # Fix: 参照 OrderExecutor 惰性工厂模式, 由订单风控链路首次解析时创建。
+            try:
+                from core.trading.position_risk_monitor import PositionRiskMonitor
+                if not self._is_service_registered(PositionRiskMonitor):
+                    self.service_container.register_factory(
+                        PositionRiskMonitor,
+                        lambda: PositionRiskMonitor(
+                            service_container=self.service_container
+                        ),
+                        scope=ServiceScope.SINGLETON
+                    )
+                    logger.info("持仓风控执行器注册完成")
+            except Exception as e:
+                logger.error(f"持仓风控执行器注册失败(降级, 动态止损/止盈不可用): {e}")
+
             # 注册任务调度器
             if not self._is_service_registered(TaskScheduler):
                 self.service_container.register(
@@ -2137,6 +2258,14 @@ class ServiceBootstrap:
                         )
                     )
                 enhanced_data_quality_monitor = self.service_container.resolve(EnhancedDataQualityMonitor)
+                # R278 数据治理：启动增强数据质量监控后台线程（此前仅注册从不 start，
+                # _monitoring_loop 永不执行，监控器为惰性死链）。启动失败仅告警不影响启动流程。
+                try:
+                    if hasattr(enhanced_data_quality_monitor, 'start_monitoring'):
+                        enhanced_data_quality_monitor.start_monitoring()
+                        logger.info("增强数据质量监控器已启动（后台监控循环）")
+                except Exception as start_error:
+                    logger.warning(f"增强数据质量监控器启动失败: {start_error}")
                 logger.info("增强数据质量监控器注册完成")
             except Exception as e:
                 logger.error(f"❌ 增强数据质量监控器注册失败: {e}")

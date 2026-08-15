@@ -1126,19 +1126,14 @@ class SmartRecommendationPanel(QWidget):
             info_label.setStyleSheet("color: #888; font-size: 14px;")
             info_layout.addWidget(info_label)
             layout.addWidget(info_frame)
-            return layout
+            return widget
         
         try:
-            # 创建BettaFish仪表板组件
+            # 创建BettaFish仪表板组件 (监控服务由 Dashboard 内部从容器自解析, 无需外部传入)
             if self._bettafish_agent:
                 self.bettafish_dashboard = BettaFishDashboard(
                     parent=widget, 
                     bettafish_agent=self._bettafish_agent
-                )
-            elif self._monitoring_service:
-                self.bettafish_dashboard = BettaFishDashboard(
-                    parent=widget, 
-                    monitoring_service=self._monitoring_service
                 )
             else:
                 # 如果没有提供BettaFish相关组件，显示提示信息

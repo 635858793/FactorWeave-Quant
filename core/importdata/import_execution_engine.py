@@ -1740,6 +1740,34 @@ class DataImportExecutionEngine(QObject):
                                      anomaly_count, missing_count, completeness_score, details)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """, records)
+                                # R287 P0-2：同步维护 monitor_latest 物化表（每 symbol+data_source+
+                                # frequency 仅保留最近一次评估，替代视图内全表 GROUP BY 子查询）
+                                try:
+                                    conn.execute("""
+                                        CREATE TABLE IF NOT EXISTS monitor_latest (
+                                            symbol VARCHAR NOT NULL,
+                                            data_source VARCHAR NOT NULL,
+                                            frequency VARCHAR NOT NULL DEFAULT '1d',
+                                            check_date DATE NOT NULL,
+                                            quality_score DECIMAL(5,2),
+                                            anomaly_count INTEGER DEFAULT 0,
+                                            missing_count INTEGER DEFAULT 0,
+                                            completeness_score DECIMAL(5,2),
+                                            details TEXT,
+                                            PRIMARY KEY (symbol, data_source, frequency)
+                                        )
+                                    """)
+                                    # records 元素顺序：monitor_id, symbol, data_source, check_date,
+                                    # frequency, quality_score, anomaly_count, missing_count,
+                                    # completeness_score, details
+                                    conn.executemany("""
+                                        INSERT OR REPLACE INTO monitor_latest
+                                        (symbol, data_source, frequency, check_date, quality_score,
+                                         anomaly_count, missing_count, completeness_score, details)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """, [[r[1], r[2], r[4], r[3], r[5], r[6], r[7], r[8], r[9]] for r in records])
+                                except Exception as ml_error:
+                                    logger.warning(f"[质量评分写入] 同步维护monitor_latest失败: {ml_error}")
                                 total_written += len(records)
                                 logger.debug(f"[质量评分写入] 批量写入{asset_type.value}: {len(records)}条记录")
                         except Exception as e:
@@ -2576,6 +2604,20 @@ class DataImportExecutionEngine(QObject):
             logger.error(f"停止所有任务失败: {e}")
             return False
 
+    def _ensure_db_writer_thread(self):
+        """确保数据库写入线程存活（R292 修复：防止连续任务写线程死亡导致数据丢失）
+
+        DatabaseWriterThread 在每次任务结束的 finally 中被 stop（保证 merge buffer
+        完全刷新），同一引擎连续执行第二个任务时写线程已死，put_write_task 入队无人
+        消费 → 数据静默丢失。任务执行前调用本方法：线程非存活则重建新实例并 start
+        （threading.Thread 不可复用，只能重建）。
+        """
+        if not hasattr(self, 'db_writer_thread') or not self.db_writer_thread.is_alive():
+            logger.warning("检测到 DatabaseWriterThread 已停止，重建写入线程（防止数据静默丢失）")
+            self.db_writer_thread = DatabaseWriterThread()
+            self.db_writer_thread.start()
+            logger.info("DatabaseWriterThread 已重新启动")
+
     def _execute_task(self, task_config: ImportTaskConfig, result: TaskExecutionResult):
         """
         执行任务的核心逻辑
@@ -2585,6 +2627,13 @@ class DataImportExecutionEngine(QObject):
             result: 任务执行结果
         """
         try:
+            # R292 修复：DatabaseWriterThread 在每次任务结束的 finally 中被 stop
+            # （保证 merge buffer 完全刷新、防止数据丢失），但同一引擎连续执行第二个
+            # 任务时写线程已死 → _save_kdata_to_database 的 put_write_task 入队无人
+            # 消费 → 数据静默丢失。任务执行前检测线程存活，非存活则重建新实例
+            # （threading.Thread 不可复用，只能重建后重新 start）。
+            self._ensure_db_writer_thread()
+
             logger.info(f" 开始执行任务: {task_config.task_id}")
             logger.info(f" 任务名称: {task_config.name}")
             
@@ -2887,7 +2936,18 @@ class DataImportExecutionEngine(QObject):
 
             # 标准化数据字段，确保与表结构匹配
             # 修复：传递data_source参数，确保保存到数据库的数据包含正确的数据源标识
-            kdata = self._standardize_kline_data_fields(kdata, data_source=task_config.data_source)
+            # R292 修复：frequency 从任务配置推导（DataFrequency.value → DuckDB 格式）。
+            # 此前 _standardize_kline_data_fields 内部硬编码 '1d'，导致分钟任务的数据
+            # 落库为 frequency='1d'，污染日线视图（展示"数据多但日期集中"）。
+            from core.plugin_types import Period as _PeriodCls
+            try:
+                _task_frequency = _PeriodCls.to_duckdb_frequency(str(task_config.frequency.value))
+            except Exception:
+                # R292 修复：兜底不再固定 '1d'（避免分钟任务异常时静默标为日线污染日线视图），
+                # 从任务配置原始值回退（to_duckdb_frequency 内部已对未知值归一为 '1d'）。
+                _task_frequency = str(getattr(task_config.frequency, 'value', '1d'))
+            kdata = self._standardize_kline_data_fields(
+                kdata, data_source=task_config.data_source, frequency=_task_frequency)
 
             # 使用任务配置中的资产类型，不再进行推断
             asset_type = task_config.asset_type
@@ -3329,8 +3389,16 @@ class DataImportExecutionEngine(QObject):
             logger.error(f"立即写入数据失败: {e}")
             return False
 
-    def _standardize_kline_data_fields(self, df, data_source: str = None) -> 'pd.DataFrame':
-        """标准化K线数据字段，确保与表结构匹配"""
+    def _standardize_kline_data_fields(self, df, data_source: str = None, frequency: str = '1d') -> 'pd.DataFrame':
+        """标准化K线数据字段，确保与表结构匹配
+
+        Args:
+            df: 输入K线数据
+            data_source: 数据源标识
+            frequency: 落库频率（DuckDB 格式 1d/1w/1M/1min/...），
+                       R292 修复：必须由调用方从任务配置推导后传入，
+                       避免分钟数据被默认值 '1d' 误标为日线（污染日线视图）。
+        """
         import pandas as pd  # 在函数开头导入，避免后续引用错误
 
         try:
@@ -3399,7 +3467,7 @@ class DataImportExecutionEngine(QObject):
                 # 元数据（6个）
                 'name': None,
                 'market': None,
-                'frequency': '1d',      # 🔧 修复：频率字段默认值为'1d'
+                'frequency': frequency,  # R292 修复：频率字段由任务配置推导（不再恒为'1d'）
                 'period': None,
                 'data_source': data_source if data_source else 'unknown',  # 修复：使用传入的data_source参数，而不是硬编码'unknown'
                 'created_at': None,
@@ -3485,7 +3553,13 @@ class DataImportExecutionEngine(QObject):
 
             # 确保datetime字段格式正确且不为空
             if 'datetime' in df.columns:
-                df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
+                # R292 修复：数值型 datetime（如 20240814）直接 pd.to_datetime 会按纳秒
+                # 解释为 1970 假象，先转字符串按 YYYYMMDD 解析（与
+                # unified_data_manager._standardize_kdata_format 一致）。
+                if pd.api.types.is_numeric_dtype(df['datetime']):
+                    df['datetime'] = pd.to_datetime(df['datetime'].astype(str), errors='coerce')
+                else:
+                    df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
                 # 删除datetime为空的行（数据库NOT NULL约束）
                 null_datetime_count = df['datetime'].isna().sum()
                 if null_datetime_count > 0:

@@ -7,6 +7,7 @@ from loguru import logger
 
 import json
 import os
+import threading
 from datetime import datetime
 from typing import Dict, Any, List
 
@@ -27,6 +28,10 @@ class AlertEventHandler:
         self.alert_history_file = None
         self.external_alert_manager = get_alert_manager()
         self._init_history_file()
+        # R292: 告警节流表 — 同类别+指标窗口内只放行一次, 解决资源阈值告警
+        # 每秒重复 (消息内嵌实时数值 → 去重指纹每秒变化, 见 _dispatch_alert)
+        self._alert_throttle: Dict[str, datetime] = {}
+        self._throttle_lock = threading.Lock()
 
     def _init_history_file(self):
         """初始化告警历史文件"""
@@ -91,13 +96,27 @@ class AlertEventHandler:
         """异步发送外部告警 (R242-A-002 新增, 供新 handler 复用)"""
         try:
             import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(self._send_external_alert(alert))
-            else:
-                loop.run_until_complete(self._send_external_alert(alert))
+            # R292 修复: asyncio.run() 替代 get_event_loop()。
+            # 旧实现 (L94 get_event_loop) 在子线程 (resource_service.py:35 的
+            # Thread-8) 同步执行时, Python 3.10+ 子线程无当前事件循环必然抛
+            # RuntimeError, 被 except 吞掉 → 外部告警从未发出且每秒刷屏。
+            # asyncio.run 为当前子线程临时创建并关闭 loop, 不依赖既有循环;
+            # 告警为低频事件, 每次创建 loop 开销可忽略。
+            asyncio.run(self._send_external_alert(alert))
         except Exception as e:
             logger.warning(f"发送外部告警失败: {e}")
+
+    def _is_throttled(self, category: str, metric_name: str,
+                      window_seconds: int = 300) -> bool:
+        """同类别+指标在窗口内只放行一次 (R292 告警节流)"""
+        key = f"{category}:{metric_name or 'unknown'}"
+        now = datetime.now()
+        with self._throttle_lock:
+            last = self._alert_throttle.get(key)
+            if last is not None and (now - last).total_seconds() < window_seconds:
+                return True
+            self._alert_throttle[key] = now
+            return False
 
     def _dispatch_alert(self, level, category: str, message: str, source: str,
                         metadata: Dict[str, Any] = None) -> None:
@@ -107,9 +126,16 @@ class AlertEventHandler:
         返回 AlertMessage 对象或 None (去重时返回 None)
         """
         try:
+            metadata = metadata or {}
+            # R292 修复: 同类别+指标节流 (默认 5 分钟)。资源阈值告警消息内嵌实时数值
+            # (L165), get_fingerprint (alert_deduplication_service.py:63) 基于完整
+            # message, 指纹每秒变化 → 去重永不命中 → "新告警"每秒重复 +
+            # 历史文件/外部渠道每秒触发一次。
+            if self._is_throttled(category, metadata.get('metric_name')):
+                return
             alert = self.alert_service.process_alert(
                 level=level, category=category, message=message,
-                source=source, metadata=metadata or {})
+                source=source, metadata=metadata)
             if alert is not None:
                 self._save_alert_to_file(alert)
                 logger.info(f"处理告警: {message}")
@@ -127,6 +153,17 @@ class AlertEventHandler:
         }
         name = getattr(resource_type, 'name', str(resource_type or 'unknown')).upper()
         return mapping.get(name, name.lower())
+
+    def _resource_type_display_name(self, resource_type) -> str:
+        """ResourceType 枚举 → 中文展示名 (HVD-D: 静态告警消息用)"""
+        mapping = {
+            'CPU': 'CPU使用率',
+            'MEMORY': '内存使用率',
+            'DISK': '磁盘使用率',
+            'NETWORK': '网络使用率',
+        }
+        name = getattr(resource_type, 'name', str(resource_type or 'unknown')).upper()
+        return mapping.get(name, f"{name}使用率")
 
     def _map_alert_severity(self, severity) -> AlertLevel:
         """AlertSeverity (resource_monitor) → AlertLevel (去重服务) 映射"""
@@ -161,26 +198,35 @@ class AlertEventHandler:
             if disk is not None and float(disk) > 90:
                 overruns.append(("磁盘使用率", float(disk), 90.0))
 
+            # HVD-D: 消息静态化——去重指纹 get_fingerprint
+            # (alert_deduplication_service.py:63) = md5(category:message:source),
+            # 原消息内嵌实时数值 → 指纹每秒变化 → 去重永不命中 (ERROR/CRITICAL
+            # 永不去重, WARNING 需 5 条同指纹才去重), 5 分钟节流仅治标。
+            # 静态消息 + 数值仅存 metadata → 指纹稳定, 窗口内同类告警真正去重。
+            metric_map = {
+                "CPU使用率": "cpu_usage",
+                "内存使用率": "memory_usage",
+                "磁盘使用率": "disk_usage",
+            }
             for name, value, threshold in overruns:
-                alert_msg = f"{name} ({value:.1f}%) 超过阈值 ({threshold:.0f}%)"
-                alert_info = self._parse_resource_alert(alert_msg)
-                if alert_info:
-                    self._dispatch_alert(
-                        # R242-A-003: 资源超限即 WARNING, 原倍率重算 (ratio<1.2)
-                        # 致百分比指标超限告警恒为 INFO
-                        level=AlertLevel.WARNING,
-                        category="系统资源",
-                        message=alert_msg,
-                        source="MetricsAggregationService",
-                        metadata={
-                            'metric_name': alert_info['metric_name'],
-                            'current_value': alert_info['current_value'],
-                            'threshold_value': alert_info['threshold_value'],
-                            'recommendation': self._get_resource_recommendation(
-                                alert_info['metric_name']),
-                            'timestamp': timestamp.isoformat(),
-                        }
-                    )
+                metric_name = metric_map[name]
+                alert_msg = f"{name}超过阈值"
+                self._dispatch_alert(
+                    # R242-A-003: 资源超限即 WARNING, 原倍率重算 (ratio<1.2)
+                    # 致百分比指标超限告警恒为 INFO
+                    level=AlertLevel.WARNING,
+                    category="系统资源",
+                    message=alert_msg,
+                    source="MetricsAggregationService",
+                    metadata={
+                        'metric_name': metric_name,
+                        'current_value': value,
+                        'threshold_value': threshold,
+                        'recommendation': self._get_resource_recommendation(
+                            metric_name),
+                        'timestamp': timestamp.isoformat(),
+                    }
+                )
         except Exception as e:
             logger.error(f"处理资源阈值告警事件失败: {e}")
 
@@ -212,26 +258,25 @@ class AlertEventHandler:
                     }
                 )
 
-            # 响应时间超标告警
+            # 响应时间超标告警 (HVD-D: 消息静态化, 数值仅存 metadata → 指纹稳定)
             if duration is not None and float(duration) > 5.0:
-                alert_msg = f"操作 '{operation_name}' 响应时间 ({float(duration):.2f}秒) 超过阈值 (5秒)"
-                alert_info = self._parse_application_alert(alert_msg, operation_name)
-                if alert_info:
-                    self._dispatch_alert(
-                        level=self._determine_alert_level(
-                            alert_info['current_value'], alert_info['threshold_value']),
-                        category="应用性能",
-                        message=alert_msg,
-                        source="MetricsAggregationService",
-                        metadata={
-                            'metric_name': alert_info['metric_name'],
-                            'current_value': alert_info['current_value'],
-                            'threshold_value': alert_info['threshold_value'],
-                            'recommendation': self._get_application_recommendation(
-                                alert_info['metric_name']),
-                            'timestamp': timestamp.isoformat(),
-                        }
-                    )
+                current_value = float(duration)
+                threshold_value = 5.0
+                self._dispatch_alert(
+                    level=self._determine_alert_level(
+                        current_value, threshold_value),
+                    category="应用性能",
+                    message=f"操作 '{operation_name}' 响应时间超过阈值",
+                    source="MetricsAggregationService",
+                    metadata={
+                        'metric_name': 'response_time',
+                        'current_value': current_value,
+                        'threshold_value': threshold_value,
+                        'recommendation': self._get_application_recommendation(
+                            'response_time'),
+                        'timestamp': timestamp.isoformat(),
+                    }
+                )
         except Exception as e:
             logger.error(f"处理应用阈值告警事件失败: {e}")
 
@@ -252,7 +297,10 @@ class AlertEventHandler:
             metric_name = self._resource_type_metric_name(resource_type)
             current_value = getattr(alert, 'current_value', 0.0)
             threshold_value = getattr(alert, 'threshold_value', 0.0)
-            message = getattr(alert, 'message', '资源告警')
+            # HVD-D: 用标准展示名重建静态消息, 覆盖 ResourceMonitor 构造的动态
+            # 文本 (内嵌实时数值 → 指纹每秒变化)。数值仅存 metadata。
+            display_name = self._resource_type_display_name(resource_type)
+            message = f"{display_name}超过阈值"
 
             self._dispatch_alert(
                 # R242-A-003: 采用 ResourceAlert 权威 severity 字段,
@@ -272,81 +320,6 @@ class AlertEventHandler:
             )
         except Exception as e:
             logger.error(f"处理 ResourceAlertEvent 失败: {e}")
-
-    def _parse_resource_alert(self, alert_msg: str) -> Dict[str, Any]:
-        """解析资源告警消息"""
-        try:
-            # 解析格式如: "CPU使用率 (85.5%) 超过阈值 (80%)"
-            if "CPU使用率" in alert_msg:
-                metric_name = "cpu_usage"
-            elif "内存使用率" in alert_msg:
-                metric_name = "memory_usage"
-            elif "磁盘使用率" in alert_msg:
-                metric_name = "disk_usage"
-            else:
-                return None
-
-            # 提取数值
-            import re
-            pattern = r'\((\d+\.?\d*)%?\)'
-            matches = re.findall(pattern, alert_msg)
-
-            if len(matches) >= 2:
-                current_value = float(matches[0])
-                threshold_value = float(matches[1])
-
-                return {
-                    'metric_name': metric_name,
-                    'current_value': current_value,
-                    'threshold_value': threshold_value
-                }
-
-        except Exception as e:
-            logger.warning(f"解析资源告警消息失败: {e}")
-
-        return None
-
-    def _parse_application_alert(self, alert_msg: str, operation: str) -> Dict[str, Any]:
-        """解析应用告警消息"""
-        try:
-            if "响应时间" in alert_msg:
-                metric_name = "response_time"
-                # 解析格式如: "操作 'query_data' 响应时间 (3.25秒) 超过阈值 (2秒)"
-                import re
-                pattern = r'\((\d+\.?\d*)秒?\)'
-                matches = re.findall(pattern, alert_msg)
-
-                if len(matches) >= 2:
-                    current_value = float(matches[0])
-                    threshold_value = float(matches[1])
-
-                    return {
-                        'metric_name': metric_name,
-                        'current_value': current_value,
-                        'threshold_value': threshold_value
-                    }
-
-            elif "错误率" in alert_msg:
-                metric_name = "error_rate"
-                # 解析格式如: "操作 'query_data' 错误率 (15%) 超过阈值 (10%)"
-                import re
-                pattern = r'\((\d+\.?\d*)%?\)'
-                matches = re.findall(pattern, alert_msg)
-
-                if len(matches) >= 2:
-                    current_value = float(matches[0])
-                    threshold_value = float(matches[1])
-
-                    return {
-                        'metric_name': metric_name,
-                        'current_value': current_value,
-                        'threshold_value': threshold_value
-                    }
-
-        except Exception as e:
-            logger.warning(f"解析应用告警消息失败: {e}")
-
-        return None
 
     def _determine_alert_level(self, current_value: float, threshold_value: float) -> AlertLevel:
         """确定告警级别"""

@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from optimization.update_throttler import get_update_throttler
+# R292 涨跌停精确判定（按板块计算涨/跌停价，与 K 线渲染各路径一致）
+from core.rendering.limit_price import is_limit_up_down, extract_symbol
 
 class CrosshairMixin:
     """十字光标功能Mixin
@@ -35,6 +37,11 @@ class CrosshairMixin:
         self._last_crosshair_update_time = 0
         self._crosshair_event_id = None  # 存储事件连接ID，避免重复绑定
         self._crosshair_initialized = False  # 跟踪十字光标是否已初始化
+        self._blit_background = None  # R265: 十字光标blit局部重绘背景缓存（None=需重建）
+        # R266: blit性能采样（每60次移动打一次均值日志，验证R265局部重绘加速效果）
+        self._blit_perf_count = 0
+        self._blit_perf_total = 0.0
+        self._blit_perf_max = 0.0
 
         # 获取节流器实例
         self.throttler = get_update_throttler()
@@ -141,11 +148,25 @@ class CrosshairMixin:
             date_str = self._safe_format_date(row, idx, kdata)
 
             # 计算涨跌幅
+            is_limit_up = False
+            is_limit_down = False
             if idx > 0:
                 prev_close = kdata.iloc[idx-1]['close']
                 change = row['close'] - prev_close
                 change_pct = (change / prev_close) * 100
-                if change > 0:
+                # R292：涨停/跌停判定与K线渲染一致——按板块精确涨/跌停价
+                # （core/rendering/limit_price.py，替代固定 4.8% 阈值，
+                # 消除主板 5~9.9% 大阳线误判）
+                is_limit_up, is_limit_down = is_limit_up_down(
+                    prev_close, row['close'], row['high'], row['low'],
+                    extract_symbol(kdata))
+                if is_limit_up:
+                    change_symbol = "+"
+                    change_str = f"↑+{change:.3f} (+{change_pct:.2f}%) 涨停"
+                elif is_limit_down:
+                    change_symbol = "-"
+                    change_str = f"↓{change:.3f} ({change_pct:.2f}%) 跌停"
+                elif change > 0:
                     change_symbol = "+"
                     change_str = f"↑+{change:.3f} (+{change_pct:.2f}%)"
                 elif change < 0:
@@ -184,8 +205,8 @@ class CrosshairMixin:
                 pattern_info += f"置信度: {pattern_data.get('confidence', 0):.3f}"
                 info += pattern_info
 
-            # 获取文本颜色
-            text_color = self._get_change_color(change_symbol)
+            # 获取文本颜色（R292：涨停橙/跌停紫与K线渲染一致）
+            text_color = self._get_change_color(change_symbol, is_limit_up, is_limit_down)
 
             return info, text_color
 
@@ -193,24 +214,39 @@ class CrosshairMixin:
             logger.error(f"创建十字光标信息失败: {str(e)}")
             return "信息加载失败", self._get_default_text_color()
 
-    def _get_change_color(self, change_symbol: str) -> str:
-        """根据涨跌符号获取颜色"""
+    def _get_change_color(self, change_symbol: str, is_limit_up: bool = False, is_limit_down: bool = False) -> str:
+        """根据涨跌符号获取颜色（中国市场：涨=红、跌=绿、涨停=橙、跌停=紫，与K线渲染严格一致）
+
+        R265 修复：原实现键名语义颠倒（下跌取 up_color / 上涨取 down_color）且使用
+        主题中不存在的 up_color/down_color 键，仅靠"颠倒逻辑+颠倒默认值"负负得正。
+        现改为与 rendering_mixin._get_chart_style 相同的 k_up/k_down 键。
+        R292 扩展：涨停/跌停单独取色 k_limit_up（橙）/k_limit_down（紫），
+        is_limit_up/is_limit_down 带默认值以兼容单参调用。
+        """
         try:
             colors = self.theme_manager.get_theme_colors()
-            if change_symbol == "-":
-                return colors.get('up_color', '#00ff00')
+            if is_limit_up:
+                return colors.get('k_limit_up', '#FF9800')
+            elif is_limit_down:
+                return colors.get('k_limit_down', '#AB47BC')
             elif change_symbol == "+":
-                return colors.get('down_color', '#ff0000')
+                return colors.get('k_up', '#e74c3c')
+            elif change_symbol == "-":
+                return colors.get('k_down', '#27ae60')
             else:
-                return colors.get('chart_text', '#ffffff')
+                return colors.get('chart_text', '#222b45')
         except Exception:
             # 默认颜色
-            if change_symbol == "-":
-                return '#00ff00'
+            if is_limit_up:
+                return '#FF9800'
+            elif is_limit_down:
+                return '#AB47BC'
             elif change_symbol == "+":
-                return '#ff0000'
+                return '#e74c3c'
+            elif change_symbol == "-":
+                return '#27ae60'
             else:
-                return '#ffffff'
+                return '#222b45'
 
     def _get_default_text_color(self) -> str:
         """获取默认文本颜色"""
@@ -241,7 +277,7 @@ class CrosshairMixin:
                 logger.warning(f"_crosshair_lines类型错误: {type(self._crosshair_lines)}，重置为空字典")
                 self._crosshair_lines = {}
 
-            # 定义需要的线条及其对应的子图
+            # 定义需要的线条及其对应的子图（R283: 移除 indicator_ax2 垂直线）
             line_configs = [
                 ('price_v', self.price_ax, 'vertical'),
                 ('volume_v', self.volume_ax, 'vertical'),
@@ -352,13 +388,14 @@ class CrosshairMixin:
                 self._crosshair_ytext = None
                 logger.info("初始化_crosshair_ytext属性")
 
-            # X轴标签（日期）
+            # X轴标签（日期）——画在最底部子图（indicator_ax，指标窗）（R283: 3轴布局）
             date_str = self._safe_format_date(row, idx, kdata)
-            if self.indicator_ax is not None:
+            x_ax = self.indicator_ax
+            if x_ax is not None:
                 if self._crosshair_xtext is None:
-                    self._crosshair_xtext = self.indicator_ax.text(
+                    self._crosshair_xtext = x_ax.text(
                         x_val, +1, date_str,
-                        transform=self.indicator_ax.get_xaxis_transform(),
+                        transform=x_ax.get_xaxis_transform(),
                         ha='center', va='top',
                         fontsize=8,
                         color=primary_color,
@@ -468,6 +505,76 @@ class CrosshairMixin:
 
         except Exception as e:
             logger.error(f"清除十字光标元素失败: {str(e)}")
+        finally:
+            # R265: 十字元素移除后，blit背景失效需重建
+            self._invalidate_crosshair_background()
+
+    def _invalidate_crosshair_background(self):
+        """使十字光标blit背景失效（任何全量重绘后必须调用，否则恢复错位背景）"""
+        self._blit_background = None
+
+    def _blit_crosshair(self) -> bool:
+        """十字光标局部重绘（blit）：仅重绘十字光标相关artist，避免每帧全画布draw_idle
+
+        R265 性能修复：原实现每次鼠标移动都 canvas.draw_idle() 全画布重绘，
+        重绘成本 ∝ 画布artist数量（K线+指标线+MACD柱状图），指标越多越卡。
+        blit 方案：先缓存一次干净背景，之后 restore_region + draw_artist 只重绘
+        十字线条/文本，性能提升一个数量级。失败时自动回退 draw_idle。
+
+        R266 性能日志：blit 路径逐帧采样（每60次打均值/最大耗时日志）；
+        背景重建（全画布 draw+copy）与回退 draw_idle 打单次耗时，用于对比验证加速效果。
+        """
+        _t_start = time.perf_counter()
+        try:
+            if self.canvas is None or self.figure is None:
+                return False
+            if self._blit_background is None:
+                # 建立干净背景：隐藏十字元素 → draw → copy（背景不含十字线）
+                self._hide_crosshair_elements()
+                self.canvas.draw()
+                self._blit_background = self.canvas.copy_from_bbox(self.figure.bbox)
+                _bg_ms = (time.perf_counter() - _t_start) * 1000
+                logger.info(
+                    f"[PERF][Crosshair] blit背景重建(全画布draw+copy): {_bg_ms:.2f}ms "
+                    f"— 仅首次/全量重绘后发生，对比每帧blit局部重绘通常<1ms")
+            self.canvas.restore_region(self._blit_background)
+            for line in self._crosshair_lines.values():
+                if line is not None and line.get_visible() and line.axes is not None:
+                    line.axes.draw_artist(line)
+            for artist in [self._crosshair_text, self._crosshair_xtext, self._crosshair_ytext]:
+                if artist is not None and artist.get_visible() and artist.axes is not None:
+                    artist.axes.draw_artist(artist)
+            self.canvas.blit(self.figure.bbox)
+            self._accumulate_blit_perf(time.perf_counter() - _t_start)
+            return True
+        except Exception as e:
+            logger.debug(f"十字光标blit重绘失败，回退draw_idle: {e}")
+            self._blit_background = None
+            _t_fb = time.perf_counter()
+            try:
+                self.canvas.draw_idle()
+            except Exception:
+                pass
+            _fb_ms = (time.perf_counter() - _t_fb) * 1000
+            logger.warning(
+                f"[PERF][Crosshair] blit失败回退全画布draw_idle: {_fb_ms:.2f}ms")
+            return False
+
+    def _accumulate_blit_perf(self, elapsed: float):
+        """累计blit耗时采样，每60次移动输出一次均值/最大值日志（避免每帧刷屏干扰性能）"""
+        self._blit_perf_count = getattr(self, '_blit_perf_count', 0) + 1
+        self._blit_perf_total = getattr(self, '_blit_perf_total', 0.0) + elapsed
+        self._blit_perf_max = max(getattr(self, '_blit_perf_max', 0.0), elapsed)
+        if self._blit_perf_count >= 60:
+            avg_ms = (self._blit_perf_total / self._blit_perf_count) * 1000
+            max_ms = self._blit_perf_max * 1000
+            logger.info(
+                f"[PERF][Crosshair] blit局部重绘: 最近60次移动 "
+                f"avg={avg_ms:.3f}ms max={max_ms:.3f}ms "
+                f"(全画布draw_idle通常数十~数百ms，指标/K线越多差异越大，验证R265加速生效)")
+            self._blit_perf_count = 0
+            self._blit_perf_total = 0.0
+            self._blit_perf_max = 0.0
 
     def _create_unified_crosshair_handler(self):
         """创建统一的十字光标处理器 - 避免重复绑定"""
@@ -486,12 +593,17 @@ class CrosshairMixin:
 
                 # 检查事件有效性
                 if (not event.inaxes or
-                    event.inaxes not in [self.price_ax, self.volume_ax, self.indicator_ax] or
+                    event.inaxes not in [self.price_ax, self.volume_ax, self.indicator_ax,
+                                         getattr(self, 'indicator_ax2', None)] or
                     self.current_kdata is None or
                     len(self.current_kdata) == 0 or
                         event.xdata is None):
                     self._hide_crosshair_elements()
-                    self.canvas.draw_idle()
+                    # R265: blit局部重绘（背景已缓存时无需全画布draw）
+                    if self._blit_background is None:
+                        self.canvas.draw_idle()
+                    else:
+                        self._blit_crosshair()
                     return
 
                 # 获取数据
@@ -513,8 +625,9 @@ class CrosshairMixin:
                 # 更新轴标签
                 self._update_crosshair_axis_labels(row, idx, kdata, x_val, y_val, primary_color)
 
-                # 刷新画布
-                self.canvas.draw_idle()
+                # R265 性能：使用blit局部重绘，避免每帧全画布draw_idle
+                if not self._blit_crosshair():
+                    self.canvas.draw_idle()
 
             def on_mouse_move(event):
                 # 性能优化P3：延迟初始化十字光标到用户首次交互时

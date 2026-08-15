@@ -33,8 +33,8 @@ SCAN_TARGETS = ['core', 'gui', 'plugins', 'components', 'backtest', 'utils', 'op
 # Files with legitimate ML/optimization random usage (not fake data):
 LEGITIMATE_RANDOM_FILES = {
     'core/services/auto_ml_optimizer.py',         # ML hyperparameter sampling
+    'core/optimization/bayesian_optimizer.py',    # 贝叶斯优化显式随机种子（GP 采样）
     'core/ml_scoring_engine.py',                    # epsilon-greedy MAB strategy
-    'core/intelligent_failover_engine.py',          # weighted random failover
     'core/tet_router_engine.py',                    # weighted random routing
     'core/services/strategy_service.py',            # random search optimization
     'core/strategy/parameter_manager.py',           # Bayesian/PSO/genetic sampling

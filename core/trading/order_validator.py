@@ -9,7 +9,7 @@ from datetime import datetime, time
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
-from core.trading.order_models import Order, OrderRequest, OrderType, OrderCategory
+from core.trading.order_models import Order, OrderRequest, OrderType, OrderCategory, OrderStatus
 from core.containers import ServiceContainer
 from core.events import EventBus
 from core.plugin_types import AssetType
@@ -71,6 +71,12 @@ class OrderValidator:
             # 3. 订单价值限制验证（可选，可配置）
             if self._config.get('validate_order_value', False):
                 result = self._validate_order_value_limit(request)
+                if not result.passed:
+                    return result
+
+            # 4. 单日最大亏损熔断 (R269-D1, 默认开启)
+            if self._config.get('validate_daily_loss', True):
+                result = self._validate_daily_loss_limit(request)
                 if not result.passed:
                     return result
 
@@ -295,6 +301,87 @@ class OrderValidator:
 
         except Exception as e:
             logger.error(f"订单价值验证失败: {e}，跳过验证")
+            return ValidationResult(passed=True)
+
+    def _validate_daily_loss_limit(self, request: OrderRequest) -> ValidationResult:
+        """R269-D1: 单日最大亏损熔断 (消费 order_validator.py:53 max_daily_loss_ratio)。
+
+        数据源: 当日已成交(FILLED)订单按买卖方向反推当日已实现盈亏
+        (order_repository.query_orders 按 create_time 当日口径, order_models.py:281-298)。
+        当日已实现盈亏 = Σ卖出收入 - Σ买入成本 - Σ手续费。
+        亏损比例 = |已实现亏损| / 账户总资产(balance + market_value) > 阈值 → 拒绝新订单。
+
+        Ponytail: 账户/查询数据不可用时降级放行 (基础设施异常不阻塞下单),
+        仅当有明确成交数据时才熔断。
+        """
+        try:
+            threshold = self._config.get('max_daily_loss_ratio', 0.05)
+            if not threshold or threshold <= 0:
+                return ValidationResult(passed=True)
+
+            # 默认账户不熔断 (风控作用于真实账户)
+            if request.account_id in (None, '', 'default'):
+                return ValidationResult(passed=True)
+
+            # 1. 账户总资产做分母 (account_models.py:71 balance + :74 market_value)
+            from core.trading.account_manager import AccountManager
+            account_manager = self.service_container.try_resolve(AccountManager)
+            account = account_manager.get_account(request.account_id) if account_manager else None
+            if not account:
+                return ValidationResult(passed=True)
+            total_assets = float(getattr(account, 'balance', 0) or 0) + float(getattr(account, 'market_value', 0) or 0)
+            if total_assets <= 0:
+                return ValidationResult(passed=True)
+
+            # 2. 查询当日已成交订单 (OrderRepository 未注册容器, 兜底自建, 参照 order_executor.py:352)
+            from core.trading.order_repository import OrderRepository
+            from core.trading.order_models import OrderQuery
+            repo = self.service_container.try_resolve(OrderRepository)
+            if not repo:
+                repo = OrderRepository(self.service_container, self.event_bus)
+            now = datetime.now()
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            orders = repo.query_orders(OrderQuery(
+                account_id=request.account_id,
+                order_statuses=[OrderStatus.FILLED],
+                start_time=start_of_day,
+                end_time=now,
+            ))
+
+            # 3. 反推当日已实现盈亏
+            realized_pnl = 0.0
+            for order in orders:
+                side = getattr(order, 'order_type', None)
+                filled_value = float(getattr(order, 'filled_price', 0) or 0) * float(getattr(order, 'filled_quantity', 0) or 0)
+                commission = float(getattr(order, 'commission', 0) or 0)
+                if side in (OrderType.SELL, OrderType.COVER):
+                    realized_pnl += filled_value - commission
+                elif side in (OrderType.BUY, OrderType.SHORT):
+                    realized_pnl -= filled_value + commission
+
+            if realized_pnl >= 0:
+                return ValidationResult(passed=True)
+
+            loss_ratio = abs(realized_pnl) / total_assets
+            if loss_ratio > threshold:
+                logger.warning(
+                    f"单日亏损熔断: 账户{request.account_id} 当日已实现亏损 {realized_pnl:.2f} "
+                    f"占总资产 {loss_ratio:.2%} > 阈值 {threshold:.2%}, 拒绝新订单"
+                )
+                return ValidationResult(
+                    passed=False,
+                    message=f"单日亏损超过熔断阈值({threshold:.0%}), 已停止下单",
+                    error_code="DAILY_LOSS_LIMIT_EXCEEDED",
+                    details={
+                        'realized_pnl': realized_pnl,
+                        'loss_ratio': loss_ratio,
+                        'threshold': threshold,
+                        'filled_orders': len(orders),
+                    },
+                )
+            return ValidationResult(passed=True)
+        except Exception as e:
+            logger.warning(f"单日亏损熔断检查异常, 降级放行: {e}")
             return ValidationResult(passed=True)
 
     def _validate_order_status(self, order: Order) -> ValidationResult:

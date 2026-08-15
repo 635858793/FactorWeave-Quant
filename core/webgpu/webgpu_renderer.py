@@ -27,6 +27,8 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from core.rendering.base_renderer import BaseChartRenderer
+# R292 涨跌停精确判定（按板块计算涨/跌停价，替代固定 4.8% 阈值）
+from core.rendering.limit_price import classify_limit_up_down, extract_symbol
 
 # GPU加速库导入
 try:
@@ -779,12 +781,26 @@ class VolumeDataProcessor:
             else:
                 is_up = np.ones(len(volumes), dtype=bool)
 
+            # R292 修复：成交量四色（涨停橙/跌停紫）——与K线同判定：
+            # 按板块精确涨/跌停价（core/rendering/limit_price.py）
+            limit_up_mask = np.zeros(len(volumes), dtype=bool)
+            limit_down_mask = np.zeros(len(volumes), dtype=bool)
+            if 'high' in data.columns and 'low' in data.columns and 'close' in data.columns:
+                closes_v = data['close'].values.astype(np.float64)
+                highs_v = data['high'].values.astype(np.float64)
+                lows_v = data['low'].values.astype(np.float64)
+                limit_up_mask, limit_down_mask = classify_limit_up_down(
+                    closes_v, highs_v, lows_v, extract_symbol(data))
+
             # GPU数据预处理
             if self.config.chunk_processing:
                 # 分块处理大数据集
-                vertices, colors, indices = self._process_in_chunks(volumes, style, is_up)
+                vertices, colors, indices = self._process_in_chunks(
+                    volumes, style, is_up, limit_up_mask, limit_down_mask)
             else:
-                vertices, colors, indices = self._process_single_batch(volumes, style, is_up=is_up)
+                vertices, colors, indices = self._process_single_batch(
+                    volumes, style, is_up=is_up,
+                    limit_up_mask=limit_up_mask, limit_down_mask=limit_down_mask)
             
             processing_time = time.time() - start_time
             logger.debug(f"成交量GPU数据预处理完成: {len(vertices)}个顶点，耗时 {processing_time*1000:.2f}ms")
@@ -796,7 +812,8 @@ class VolumeDataProcessor:
             # 降级到CPU处理
             return self._cpu_fallback_process(data, style)
     
-    def _process_in_chunks(self, volumes: np.ndarray, style: Dict[str, Any], is_up: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _process_in_chunks(self, volumes: np.ndarray, style: Dict[str, Any], is_up: np.ndarray,
+                           limit_up_mask: np.ndarray = None, limit_down_mask: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """分块处理大数据集"""
         all_vertices = []
         all_colors = []
@@ -806,7 +823,10 @@ class VolumeDataProcessor:
         for i in range(0, len(volumes), chunk_size):
             chunk = volumes[i:i + chunk_size]
             chunk_is_up = is_up[i:i + chunk_size] if is_up is not None else None
-            chunk_vertices, chunk_colors, chunk_indices = self._process_single_batch(chunk, style, i, chunk_is_up)
+            chunk_limit_up = limit_up_mask[i:i + chunk_size] if limit_up_mask is not None else None
+            chunk_limit_down = limit_down_mask[i:i + chunk_size] if limit_down_mask is not None else None
+            chunk_vertices, chunk_colors, chunk_indices = self._process_single_batch(
+                chunk, style, i, chunk_is_up, chunk_limit_up, chunk_limit_down)
             
             all_vertices.extend(chunk_vertices)
             all_colors.extend(chunk_colors)
@@ -814,19 +834,25 @@ class VolumeDataProcessor:
         
         return np.array(all_vertices), np.array(all_colors), np.array(all_indices)
     
-    def _process_single_batch(self, volumes: np.ndarray, style: Dict[str, Any], offset: int = 0, is_up: np.ndarray = None) -> Tuple[List, List, List]:
+    def _process_single_batch(self, volumes: np.ndarray, style: Dict[str, Any], offset: int = 0,
+                              is_up: np.ndarray = None, limit_up_mask: np.ndarray = None,
+                              limit_down_mask: np.ndarray = None) -> Tuple[List, List, List]:
         """处理单个批次的数据"""
         n = len(volumes)
         if n == 0:
             return [], [], []
 
-        # 基础样式
-        up_color = style.get('up_color', '#ff4444')
-        down_color = style.get('down_color', '#44ff44')
+        # 基础样式（R292：优先 volume_* 主题键，回退 up/down 常规键）
+        up_color = style.get('volume_up_color', style.get('up_color', '#ff4444'))
+        down_color = style.get('volume_down_color', style.get('down_color', '#44ff44'))
+        limit_up_color = style.get('limit_up_color', '#FF9800')
+        limit_down_color = style.get('limit_down_color', '#AB47BC')
 
         # 预计算颜色RGB值，避免循环内重复调用 _hex_to_rgb
         up_color_rgb = self._hex_to_rgb(up_color) if isinstance(up_color, str) else tuple(up_color)
         down_color_rgb = self._hex_to_rgb(down_color) if isinstance(down_color, str) else tuple(down_color)
+        limit_up_color_rgb = self._hex_to_rgb(limit_up_color) if isinstance(limit_up_color, str) else tuple(limit_up_color)
+        limit_down_color_rgb = self._hex_to_rgb(limit_down_color) if isinstance(limit_down_color, str) else tuple(limit_down_color)
 
         # 过滤有效成交量
         valid_mask = volumes > 0
@@ -854,10 +880,15 @@ class VolumeDataProcessor:
 
         vertices = vertices[valid_mask].ravel().tolist()
 
-        # 批量构建颜色: (n_valid, 3)
+        # 批量构建颜色: (n_valid, 3)  R292：四色（涨停橙/跌停紫/涨红/跌绿）
         if is_up is not None:
             is_up_valid = is_up[valid_mask]
-            colors = np.where(is_up_valid[:, np.newaxis], up_color_rgb, down_color_rgb)
+            lu_valid = limit_up_mask[valid_mask] if limit_up_mask is not None else np.zeros(n_valid, dtype=bool)
+            ld_valid = limit_down_mask[valid_mask] if limit_down_mask is not None else np.zeros(n_valid, dtype=bool)
+            colors = np.where(
+                lu_valid[:, np.newaxis], limit_up_color_rgb,
+                np.where(ld_valid[:, np.newaxis], limit_down_color_rgb,
+                         np.where(is_up_valid[:, np.newaxis], up_color_rgb, down_color_rgb)))
         else:
             colors = np.tile(up_color_rgb, (n_valid, 1))
 
@@ -1549,7 +1580,7 @@ class WebGPURenderer(BaseChartRenderer):
             
             if not self.initialized:
                 logger.warning("WebGPURenderer未初始化，尝试降级渲染")
-                return self._render_cpu_fallback_candlestick(data, style, ax)
+                return self._render_cpu_fallback_candlestick(data, style, ax, x=x, use_datetime_axis=use_datetime_axis)
             
             # 预处理数据
             style = style or {}
@@ -1561,14 +1592,16 @@ class WebGPURenderer(BaseChartRenderer):
                 return self._render_with_gpu_buffer(vertices, colors, ax, is_up_list=is_up_list, segments=segments)
             else:
                 # 降级到CPU渲染
-                return self._render_cpu_fallback_candlestick(data, style, ax)
+                return self._render_cpu_fallback_candlestick(data, style, ax, x=x, use_datetime_axis=use_datetime_axis)
                 
         except Exception as e:
             logger.error(f"K线图GPU渲染失败: {e}")
-            return self._render_cpu_fallback_candlestick(data, style, ax)
+            return self._render_cpu_fallback_candlestick(data, style, ax, x=x, use_datetime_axis=use_datetime_axis)
     
     def render_line(self, ax, data: pd.Series, 
-                   style: Dict[str, Any] = None) -> bool:
+                   style: Dict[str, Any] = None,
+                   x: np.ndarray = None,
+                   use_datetime_axis: bool = True) -> bool:
         """使用GPU加速渲染线图"""
         try:
             logger.info("📈 使用WebGPURenderer渲染线图")
@@ -1683,6 +1716,12 @@ class WebGPURenderer(BaseChartRenderer):
 
         up_color = self._parse_color(style.get('up_color', '#ff0000'))
         down_color = self._parse_color(style.get('down_color', '#00ff00'))
+        # R292 修复：WebGPU GPU 路径补四色（涨红/跌绿/涨停橙/跌停紫）。
+        # 涨跌停按板块精确判定：昨收 × (1 ± 幅度) 四舍五入到分 = 涨/跌停价，
+        # 收盘价等于涨/跌停价且封板才判定（core/rendering/limit_price.py）——
+        # 消除固定 4.8% 阈值对主板 5~9.9% 大阳线等的误判。
+        limit_up_color = self._parse_color(style.get('limit_up_color', '#FF9800'))
+        limit_down_color = self._parse_color(style.get('limit_down_color', '#AB47BC'))
 
         open_prices = data['open'].values if 'open' in data.columns else data['close'].values
         close_prices = data['close'].values
@@ -1716,9 +1755,28 @@ class WebGPURenderer(BaseChartRenderer):
         vertices[3::4, 0] = x_right
         vertices[3::4, 1] = body_bottom
 
+        # R292 四色分类：涨停/跌停按板块精确判定（与 matplotlib 传统路径、
+        # CPU 降级路径、成交量、十字光标浮窗共用 core/rendering/limit_price.py）
+        # R292-HV：列优先读取 limit 掩码（上游在降采样前按全量数据计算，保证
+        # 昨收为真实前一交易日；列缺失时回退内部按板块判定，兼容直接传数据路径）
+        if 'limit_up' in data.columns and 'limit_down' in data.columns:
+            is_limit_up = data['limit_up'].to_numpy(dtype=bool)
+            is_limit_down = data['limit_down'].to_numpy(dtype=bool)
+        else:
+            closes_arr = close_prices.astype(np.float64)
+            highs_arr = high_prices.astype(np.float64)
+            lows_arr = low_prices.astype(np.float64)
+            is_limit_up, is_limit_down = classify_limit_up_down(
+                closes_arr, highs_arr, lows_arr, extract_symbol(data))
+
         up_color_arr = np.array(up_color, dtype=np.float32)
         down_color_arr = np.array(down_color, dtype=np.float32)
-        color_per_candle = np.where(is_up_list[:, np.newaxis], up_color_arr, down_color_arr)
+        limit_up_color_arr = np.array(limit_up_color, dtype=np.float32)
+        limit_down_color_arr = np.array(limit_down_color, dtype=np.float32)
+        color_per_candle = np.where(
+            is_limit_up[:, np.newaxis], limit_up_color_arr,
+            np.where(is_limit_down[:, np.newaxis], limit_down_color_arr,
+                     np.where(is_up_list[:, np.newaxis], up_color_arr, down_color_arr)))
         colors = np.repeat(color_per_candle, 4, axis=0).reshape(-1, 3)
 
         segments = [
@@ -1748,7 +1806,9 @@ class WebGPURenderer(BaseChartRenderer):
             logger.error(f"GPU缓冲区渲染失败: {e}")
             return False
     
-    def _render_cpu_fallback_candlestick(self, data: pd.DataFrame, style: Dict[str, Any], ax) -> bool:
+    def _render_cpu_fallback_candlestick(self, data: pd.DataFrame, style: Dict[str, Any], ax,
+                                         x: np.ndarray = None,
+                                         use_datetime_axis: bool = True) -> bool:
         """CPU降级渲染K线图"""
         try:
             logger.info("使用CPU降级渲染K线图")
@@ -1759,6 +1819,10 @@ class WebGPURenderer(BaseChartRenderer):
                 style = {}
             up_color = style.get('up_color', '#ff0000')
             down_color = style.get('down_color', '#00ff00')
+            # R292 修复：CPU 降级路径补四色 + 阳线空心/阴线实心 + 影线按类着色，
+            # 与 matplotlib 传统路径及 GPU 路径保持完全一致（按板块精确涨/跌停价）。
+            limit_up_color = style.get('limit_up_color', '#FF9800')
+            limit_down_color = style.get('limit_down_color', '#AB47BC')
             alpha = style.get('alpha', 0.7)
 
             has_ohlc = all(c in data.columns for c in ['open', 'high', 'low', 'close'])
@@ -1774,59 +1838,77 @@ class WebGPURenderer(BaseChartRenderer):
                 lows = data['low'].values if 'low' in data.columns else closes
 
             n = len(data)
-            x = np.arange(n, dtype=np.float64)
+            # R292 修复：优先使用调用方传入的 x（与主图坐标一致），否则回退序号
+            if x is None or len(x) != n:
+                x = np.arange(n, dtype=np.float64)
             candle_width = 0.6
             half_width = candle_width / 2.0
 
             is_up = closes >= opens
-            up_idx = np.where(is_up)[0]
-            down_idx = np.where(~is_up)[0]
+            # R292 精确判定：按板块涨/跌停价（core/rendering/limit_price.py）
+            # R292-HV：列优先读取 limit 掩码（上游降采样前按全量数据计算；
+            # 列缺失时回退内部判定，兼容直接传数据的调用方）
+            if 'limit_up' in data.columns and 'limit_down' in data.columns:
+                is_limit_up = data['limit_up'].to_numpy(dtype=bool)
+                is_limit_down = data['limit_down'].to_numpy(dtype=bool)
+            else:
+                symbol = extract_symbol(data)
+                is_limit_up, is_limit_down = classify_limit_up_down(
+                    closes, highs, lows, symbol)
+            up_idx = np.where(is_up & ~is_limit_up & ~is_limit_down)[0]
+            down_idx = np.where((~is_up) & ~is_limit_up & ~is_limit_down)[0]
+            limit_up_idx = np.where(is_limit_up)[0]
+            limit_down_idx = np.where(is_limit_down)[0]
 
-            # 1. High-Low shadows → LineCollection 批量渲染
-            shadows = np.empty((n, 2, 2), dtype=np.float64)
-            shadows[:, 0, 0] = x
-            shadows[:, 0, 1] = lows
-            shadows[:, 1, 0] = x
-            shadows[:, 1, 1] = highs
+            def _make_verts(idx_arr):
+                if len(idx_arr) == 0:
+                    return np.empty((0, 4, 2), dtype=np.float64)
+                m = len(idx_arr)
+                verts = np.empty((m, 4, 2), dtype=np.float64)
+                verts[:, 0, 0] = x[idx_arr] - half_width
+                verts[:, 0, 1] = opens[idx_arr]
+                verts[:, 1, 0] = x[idx_arr] - half_width
+                verts[:, 1, 1] = closes[idx_arr]
+                verts[:, 2, 0] = x[idx_arr] + half_width
+                verts[:, 2, 1] = closes[idx_arr]
+                verts[:, 3, 0] = x[idx_arr] + half_width
+                verts[:, 3, 1] = opens[idx_arr]
+                return verts
 
-            lc = LineCollection(shadows, colors='black', linewidth=0.5)
-            ax.add_collection(lc)
+            def _make_shadows(idx_arr):
+                if len(idx_arr) == 0:
+                    return np.empty((0, 2, 2), dtype=np.float64)
+                segs = np.empty((len(idx_arr), 2, 2), dtype=np.float64)
+                segs[:, 0, 0] = x[idx_arr]
+                segs[:, 0, 1] = lows[idx_arr]
+                segs[:, 1, 0] = x[idx_arr]
+                segs[:, 1, 1] = highs[idx_arr]
+                return segs
 
-            # 2. Up candles (close >= open) → PolyCollection
-            if len(up_idx) > 0:
-                n_up = len(up_idx)
-                verts_up = np.empty((n_up, 4, 2), dtype=np.float64)
-                verts_up[:, 0, 0] = x[up_idx] - half_width
-                verts_up[:, 0, 1] = opens[up_idx]
-                verts_up[:, 1, 0] = x[up_idx] - half_width
-                verts_up[:, 1, 1] = closes[up_idx]
-                verts_up[:, 2, 0] = x[up_idx] + half_width
-                verts_up[:, 2, 1] = closes[up_idx]
-                verts_up[:, 3, 0] = x[up_idx] + half_width
-                verts_up[:, 3, 1] = opens[up_idx]
+            # 1. 影线 → LineCollection，按类着色（不再统一黑色）
+            for idx_arr, color in (
+                    (limit_up_idx, limit_up_color), (limit_down_idx, limit_down_color),
+                    (up_idx, up_color), (down_idx, down_color)):
+                segs = _make_shadows(idx_arr)
+                if len(segs) > 0:
+                    ax.add_collection(LineCollection(segs, colors=color, linewidth=0.5))
 
-                pc_up = PolyCollection(
-                    verts_up, facecolor=up_color, edgecolor=up_color,
-                    linewidth=0.5, alpha=alpha)
-                ax.add_collection(pc_up)
-
-            # 3. Down candles (close < open) → PolyCollection
-            if len(down_idx) > 0:
-                n_down = len(down_idx)
-                verts_down = np.empty((n_down, 4, 2), dtype=np.float64)
-                verts_down[:, 0, 0] = x[down_idx] - half_width
-                verts_down[:, 0, 1] = closes[down_idx]
-                verts_down[:, 1, 0] = x[down_idx] - half_width
-                verts_down[:, 1, 1] = opens[down_idx]
-                verts_down[:, 2, 0] = x[down_idx] + half_width
-                verts_down[:, 2, 1] = opens[down_idx]
-                verts_down[:, 3, 0] = x[down_idx] + half_width
-                verts_down[:, 3, 1] = closes[down_idx]
-
-                pc_down = PolyCollection(
-                    verts_down, facecolor=down_color, edgecolor=down_color,
-                    linewidth=0.5, alpha=alpha)
-                ax.add_collection(pc_down)
+            # 2. 蜡烛实体：阳线/涨停/跌停空心（facecolor='none' 边框着色），阴线实心
+            for idx_arr, color, hollow in (
+                    (limit_up_idx, limit_up_color, True),
+                    (limit_down_idx, limit_down_color, True),
+                    (up_idx, up_color, True),
+                    (down_idx, down_color, False)):
+                if len(idx_arr) == 0:
+                    continue
+                verts = _make_verts(idx_arr)
+                pc = PolyCollection(
+                    verts,
+                    facecolor='none' if hollow else color,
+                    edgecolor=color,
+                    linewidth=1.0 if hollow else 0.5,
+                    alpha=alpha)
+                ax.add_collection(pc)
 
             if n > 0:
                 ax.autoscale_view()
@@ -2184,8 +2266,12 @@ class WebGPURenderer(BaseChartRenderer):
                 patches.append(polygon)
 
                 if colors_arr is not None and len(colors_arr) > 0:
-                    if colors_arr.ndim == 2 and len(colors_arr) > i:
-                        patch_color = colors_arr[i].tolist()
+                    if colors_arr.ndim == 2 and len(colors_arr) >= num_quads:
+                        # 2D 颜色两种形态：逐蜡烛 (n,3) 或逐顶点 (n*4,3)（每蜡烛4顶点同色）。
+                        # 必须按 stride 取每根蜡烛颜色，禁止 colors_arr[i]（i≥1 时取到
+                        # 第 i//4 根蜡烛颜色导致错位——R292 部分点位颜色错误根因）。
+                        stride = len(colors_arr) // num_quads
+                        patch_color = colors_arr[i * stride].tolist()
                     elif colors_arr.ndim == 1:
                         base_color_idx = i * 3
                         if base_color_idx + 3 <= len(colors_arr):
@@ -2223,7 +2309,9 @@ class WebGPURenderer(BaseChartRenderer):
 
                 if colors_arr is not None and len(colors_arr) > 0:
                     if colors_arr.ndim == 2 and len(colors_arr) >= n_segments:
-                        shadow_colors = colors_arr[:n_segments].tolist()
+                        # 与蜡烛同策略：逐顶点形态按 stride 取每根蜡烛颜色（防错位）
+                        stride = len(colors_arr) // n_segments
+                        shadow_colors = colors_arr[::stride][:n_segments].tolist()
                     elif colors_arr.ndim == 1 and len(colors_arr) >= n_segments * 3:
                         shadow_colors = colors_arr[:n_segments * 3].reshape(-1, 3).tolist()
                     else:

@@ -172,17 +172,9 @@ class CompleteDatabaseInitializer:
             )''')
 
             # 8. 指标表
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS indicator (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                category TEXT NOT NULL,
-                params TEXT,
-                description TEXT,
-                formula TEXT,
-                extra TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
+            # 注意：indicator 域表（indicator/indicator_categories/indicator_implementations/
+            # indicator_parameters）由 core/unified_indicator_service.py::_create_tables 权威定义，
+            # 此处不再重复建表，避免 CREATE TABLE IF NOT EXISTS 先到先得导致 schema 冲突。
 
             # 9. 用户日志表
             cursor.execute('''
@@ -233,17 +225,19 @@ class CompleteDatabaseInitializer:
             )''')
 
             # 13. 形态模式表
+            # 列定义与 core/unified_indicator_service.py::_create_tables 的 pattern_types 保持一致，
+            # 防止全新环境下本脚本先执行时抢建出不兼容 schema
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS pattern_types (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                english_name TEXT,
+                name TEXT NOT NULL,
+                english_name TEXT NOT NULL UNIQUE,
                 category TEXT NOT NULL,
-                signal_type TEXT,
+                signal_type TEXT NOT NULL,
                 description TEXT,
                 min_periods INTEGER DEFAULT 5,
-                max_periods INTEGER DEFAULT 60,
-                confidence_threshold REAL DEFAULT 0.5,
+                max_periods INTEGER DEFAULT 20,
+                confidence_threshold REAL DEFAULT 0.7,
                 algorithm_code TEXT,
                 parameters TEXT,
                 success_rate REAL DEFAULT 0.7,
@@ -412,43 +406,6 @@ class CompleteDatabaseInitializer:
         # 插入初始数据
         self._insert_sqlite_initial_data()
 
-    def _init_factorweave_system_db(self):
-        """初始化FactorWeave系统数据库"""
-        logger.info("创建FactorWeave系统数据库表...")
-
-        db = UnifiedSQLiteAccess.get_instance(str(self.factorweave_db_path))
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-
-            # FactorWeave特有的系统配置表
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS factorweave_config (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                module TEXT NOT NULL,
-                config_key TEXT NOT NULL,
-                config_value TEXT NOT NULL,
-                config_type TEXT DEFAULT 'string',
-                description TEXT,
-                is_encrypted BOOLEAN DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(module, config_key)
-            )''')
-
-            # 系统监控配置表
-            cursor.execute('''
-            CREATE TABLE IF NOT EXISTS system_monitor_config (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                monitor_type TEXT NOT NULL,
-                config_data TEXT NOT NULL,
-                is_active BOOLEAN DEFAULT 1,
-                check_interval INTEGER DEFAULT 60,
-                alert_threshold TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
-
-            conn.commit()
 
     def _insert_sqlite_initial_data(self):
         """插入SQLite初始数据"""

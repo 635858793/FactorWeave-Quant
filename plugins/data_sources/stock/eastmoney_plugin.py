@@ -92,33 +92,6 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
             '33': '科创板'
         }
 
-    def get_plugin_info(self) -> PluginInfo:
-        """获取插件信息"""
-        return PluginInfo(
-            id=self.plugin_id,
-            name=self.name,
-            version=self.version,
-            description=self.description,
-            author=self.author,
-            supported_asset_types=[AssetType.STOCK_A],
-            supported_data_types=[
-                DataType.HISTORICAL_KLINE,
-                DataType.REAL_TIME_QUOTE,
-                DataType.FUNDAMENTAL,
-                DataType.ASSET_LIST,          # 资产列表
-                DataType.FUND_FLOW,           # 资金流数据
-                DataType.SECTOR_FUND_FLOW     # 板块资金流
-            ],
-            capabilities={
-                "markets": ["SH", "SZ"],
-                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D", "W", "M"],
-                "real_time_support": True,
-                "historical_data": True,
-                "fundamental_data": True,
-                "max_history_years": 10
-            }
-        )
-
     def connect(self, **kwargs) -> bool:
         """连接数据源"""
         try:
@@ -214,32 +187,6 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                 message=f"东方财富健康检查失败: {e}",
                 response_time=(time.time() - start_time) * 1000
             )
-
-    def get_plugin_info(self) -> PluginInfo:
-        """获取插件信息"""
-        return PluginInfo(
-            id="eastmoney_stock_plugin",
-            name=self.name,
-            version=self.version,
-            description=self.description,
-            author=self.author,
-            supported_asset_types=[AssetType.STOCK_A],
-            supported_data_types=[
-                DataType.HISTORICAL_KLINE,
-                DataType.REAL_TIME_QUOTE,
-                DataType.FUNDAMENTAL,
-                DataType.TRADE_TICK
-            ],
-            capabilities={
-                "markets": ["SH", "SZ"],
-                "frequencies": ["1m", "5m", "15m", "30m", "60m", "D", "W", "M"],
-                "real_time_support": True,
-                "historical_data": True,
-                "fundamental_data": True,
-                "tick_data": True,
-                "max_history_years": 10
-            }
-        )
 
     def get_supported_asset_types(self) -> List[AssetType]:
         """获取支持的资产类型"""
@@ -457,6 +404,8 @@ class EastMoneyStockPlugin(IDataSourcePlugin):
                 '15m': '15min',
                 '30m': '30min',
                 '60m': '60min',
+                '1H': '60min',
+                '1h': '60min',
                 '1min': '1min',
                 '5min': '5min',
                 '15min': '15min',

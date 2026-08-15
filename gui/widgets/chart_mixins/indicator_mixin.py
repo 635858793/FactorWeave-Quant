@@ -50,18 +50,28 @@ class IndicatorMixin:
         Returns:
             List[dict]: [{"name": 指标名, "params": 参数字典}, ...]
         """
+        # 优先通过 coordinator 获取（主 ChartWidget.coordinator 指向 MainWindowCoordinator）
+        coordinator = getattr(self, 'coordinator', None)
+        if coordinator is not None and hasattr(coordinator, 'get_current_indicators'):
+            indicators = coordinator.get_current_indicators()
+            if indicators:
+                return indicators
+
+        # 兜底：向上查找主窗口（多屏场景 ChartWidget.coordinator 可能为 None）
         main_window = self.parentWidget()
         while main_window and not hasattr(main_window, 'get_current_indicators'):
             main_window = main_window.parentWidget() if hasattr(
                 main_window, 'parentWidget') else None
         if main_window and hasattr(main_window, 'get_current_indicators'):
-            return main_window.get_current_indicators()
-        # 兜底：如果未找到主窗口接口，返回默认指标
+            indicators = main_window.get_current_indicators()
+            if indicators:
+                return indicators
+        # 兜底：如果未找到主窗口接口，返回默认指标（需带 group 字段，否则 MACD 等会误入 talib 分支）
         return [
-            {"name": "MA20", "params": {"period": 20}},
-            {"name": "MACD", "params": {"fast": 12, "slow": 26, "signal": 9}},
-            {"name": "RSI", "params": {"period": 14}},
-            {"name": "BOLL", "params": {"period": 20, "std": 2.0}}
+            {"name": "MA20", "params": {"period": 20}, "group": "builtin"},
+            {"name": "MACD", "params": {"fast": 12, "slow": 26, "signal": 9}, "group": "builtin"},
+            {"name": "RSI", "params": {"period": 14}, "group": "builtin"},
+            {"name": "BOLL", "params": {"period": 20, "p": 2.0}, "group": "builtin"}
         ]
 
     def _render_indicators(self, kdata: pd.DataFrame, x=None):
@@ -94,6 +104,9 @@ class IndicatorMixin:
                 group = indicator.get('group', '')
                 params = indicator.get('params', {})
                 formula = indicator.get('formula', None)
+                # R283: 区域收敛为单一指标区 indicator_ax（移除第二指标窗 indicator_ax2）。
+                # region 字段保留读取（left_panel 事件链路/持久化仍携带），统一落到 indicator_ax。
+                target_indicator_ax = self.indicator_ax
                 
                 # 验证参数是否为字典
                 if not isinstance(params, dict):
@@ -103,11 +116,14 @@ class IndicatorMixin:
 
                 try:
                     # 使用新的指标系统计算指标
-                    if name.startswith('MA') and (group == 'builtin' or name[2:].isdigit()):
+                    # MA 分支条件需排除 MACD/MAMA 等以 MA 开头的非 MA 指标
+                    if name == 'MA' or (name.startswith('MA') and len(name) > 2 and name[2:].isdigit()):
                         # 处理MA指标
-                        period = int(params.get('n', name[2:]) or 5)
+                        # R266: 读取键对齐 TA-Lib 参数名 timeperiod（全链路：DB种子/对话框/事件均用 TA-Lib 名），
+                        # 旧键 n 保留回退兼容（历史调用方）
+                        period = int(params.get('timeperiod', params.get('n', name[2:])) or 5)
                         result_df = calculate_indicator(
-                            'MA', kdata, {'timeperiod': period})
+                            'MA', kdata, timeperiod=period)
                         if 'MA' in result_df.columns:
                             ma_values = result_df['MA'].values
                             valid_indices = ~np.isnan(ma_values)
@@ -119,11 +135,12 @@ class IndicatorMixin:
 
                     elif name == 'MACD' and group == 'builtin':
                         # 处理MACD指标
-                        result_df = calculate_indicator('MACD', kdata, {
-                            'fastperiod': int(params.get('fast', 12)),
-                            'slowperiod': int(params.get('slow', 26)),
-                            'signalperiod': int(params.get('signal', 9))
-                        })
+                        # R266: 读取键对齐 TA-Lib 参数名 fastperiod/slowperiod/signalperiod
+                        #（DB种子/对话框/事件均用 TA-Lib 名，原读 fast/slow/signal 导致对话框改参不生效）
+                        result_df = calculate_indicator('MACD', kdata,
+                            fastperiod=int(params.get('fastperiod', params.get('fast', 12))),
+                            slowperiod=int(params.get('slowperiod', params.get('slow', 26))),
+                            signalperiod=int(params.get('signalperiod', params.get('signal', 9))))
 
                         if all(col in result_df.columns for col in ['MACD', 'MACDSignal', 'MACDHist']):
                             macd_values = result_df['MACD'].values
@@ -138,26 +155,64 @@ class IndicatorMixin:
                                 valid_signal = signal_values[valid_indices]
                                 valid_hist = hist_values[valid_indices]
 
-                                self.indicator_ax.plot(valid_x, valid_macd,
+                                target_indicator_ax.plot(valid_x, valid_macd,
                                                        color=self._get_indicator_style('MACD', i)[
                                                            'color'],
                                                        linewidth=0.7, alpha=0.85, label='MACD')
-                                self.indicator_ax.plot(valid_x, valid_signal,
+                                target_indicator_ax.plot(valid_x, valid_signal,
                                                        color=self._get_indicator_style(
                                                            'MACD-Signal', i+1)['color'],
                                                        linewidth=0.7, alpha=0.85, label='Signal')
 
-                                # 绘制柱状图
-                                colors = ['red' if h >=
-                                          0 else 'green' for h in valid_hist]
-                                self.indicator_ax.bar(
-                                    valid_x, valid_hist, color=colors, alpha=0.5, width=0.6)
+                                # 绘制柱状图（R265：bar → PolyCollection，1个artist替代N个patch，
+                                # 大幅降低缩放/十字光标全量重绘成本；update_datalim保证ylim包含柱子）
+                                # R266: 性能耗时日志，量化 PolyCollection 渲染成本（对比 bar() 需 N 个 patch）
+                                _t_hist_start = time.perf_counter()
+                                from matplotlib.collections import PolyCollection
+                                half_w = 0.3
+                                up_mask = valid_hist >= 0
+
+                                def build_hist_verts(mask):
+                                    xs = valid_x[mask]
+                                    hs = valid_hist[mask]
+                                    if len(xs) == 0:
+                                        return np.empty((0, 4, 2))
+                                    verts = np.empty((len(xs), 4, 2))
+                                    verts[:, 0, 0] = xs - half_w
+                                    verts[:, 0, 1] = 0
+                                    verts[:, 1, 0] = xs - half_w
+                                    verts[:, 1, 1] = hs
+                                    verts[:, 2, 0] = xs + half_w
+                                    verts[:, 2, 1] = hs
+                                    verts[:, 3, 0] = xs + half_w
+                                    verts[:, 3, 1] = 0
+                                    return verts
+
+                                verts_up = build_hist_verts(up_mask)
+                                verts_dn = build_hist_verts(~up_mask)
+                                if len(verts_up) > 0:
+                                    pc_up = PolyCollection(verts_up, facecolors='red', alpha=0.5)
+                                    target_indicator_ax.add_collection(pc_up)
+                                    target_indicator_ax.update_datalim(verts_up.reshape(-1, 2))
+                                if len(verts_dn) > 0:
+                                    pc_dn = PolyCollection(verts_dn, facecolors='green', alpha=0.5)
+                                    target_indicator_ax.add_collection(pc_dn)
+                                    target_indicator_ax.update_datalim(verts_dn.reshape(-1, 2))
+                                if len(verts_up) > 0 or len(verts_dn) > 0:
+                                    target_indicator_ax.autoscale_view()
+                                _t_hist_end = time.perf_counter()
+                                logger.info(
+                                    f"[PERF][MACD-Hist] 柱状图渲染耗时: "
+                                    f"{(_t_hist_end - _t_hist_start) * 1000:.2f}ms "
+                                    f"(柱数={len(valid_hist)}, PolyCollection×2 替代 "
+                                    f"{len(valid_hist)}个 bar patch, 缩放/十字光标全量重绘成本随之大幅下降)")
 
                     elif name == 'RSI' and group == 'builtin':
                         # 处理RSI指标
-                        period = int(params.get('n', 14))
+                        # R266: 读取键对齐 TA-Lib timeperiod（原读 n 导致对话框改参不生效）
+                        period = int(params.get('timeperiod', params.get('n', 14)))
                         result_df = calculate_indicator(
-                            'RSI', kdata, {'timeperiod': period})
+                            'RSI', kdata, timeperiod=period)
 
                         if 'RSI' in result_df.columns:
                             rsi_values = result_df['RSI'].values
@@ -165,18 +220,35 @@ class IndicatorMixin:
                             if np.any(valid_indices):
                                 valid_x = x[valid_indices]
                                 valid_values = rsi_values[valid_indices]
-                                self.indicator_ax.plot(valid_x, valid_values, color=style['color'],
+                                target_indicator_ax.plot(valid_x, valid_values, color=style['color'],
                                                        linewidth=style['linewidth'], alpha=style['alpha'], label='RSI')
+
+                    elif name == 'KDJ' and group == 'builtin':
+                        # 处理KDJ指标（TA-Lib无KDJ函数，使用本地算法）
+                        from core.indicator_adapter import calc_kdj
+                        n = int(params.get('n', 9))
+                        m1 = int(params.get('m1', 3))
+                        m2 = int(params.get('m2', 3))
+                        k_series, d_series, j_series = calc_kdj(
+                            kdata, n=n, m1=m1, m2=m2)
+                        for series, label in [(k_series, 'K'), (d_series, 'D'), (j_series, 'J')]:
+                            valid_indices = ~np.isnan(series.values)
+                            if np.any(valid_indices):
+                                target_indicator_ax.plot(x[valid_indices], series.values[valid_indices],
+                                                       color=self._get_indicator_style(
+                                                           f'KDJ-{label}', i)['color'],
+                                                       linewidth=0.7, alpha=0.85, label=f'KDJ-{label}')
 
                     elif (name == 'BOLL' or name == 'BBANDS') and group == 'builtin':
                         # 处理布林带指标
-                        n = int(params.get('n', 20))
-                        p = float(params.get('p', 2))
-                        result_df = calculate_indicator('BBANDS', kdata, {
-                            'timeperiod': n,
-                            'nbdevup': p,
-                            'nbdevdn': p
-                        })
+                        # R266: 读取键对齐 TA-Lib timeperiod/nbdevup/nbdevdn（原读 n/p 导致对话框改参不生效）
+                        n = int(params.get('timeperiod', params.get('n', 20)))
+                        nbdevup = float(params.get('nbdevup', params.get('p', 2)))
+                        nbdevdn = float(params.get('nbdevdn', nbdevup))
+                        result_df = calculate_indicator('BBANDS', kdata,
+                            timeperiod=n,
+                            nbdevup=nbdevup,
+                            nbdevdn=nbdevdn)
 
                         if all(col in result_df.columns for col in ['BBMiddle', 'BBUpper', 'BBLower']):
                             mid_values = result_df['BBMiddle'].values
@@ -249,6 +321,9 @@ class IndicatorMixin:
                             for j, col in enumerate(result_df.columns):
                                 if col in ['open', 'high', 'low', 'close', 'volume', 'datetime']:
                                     continue  # 跳过原始数据列
+                                # 跳过非数值列（如 code/symbol 等字符串列），避免 np.isnan 崩溃
+                                if not pd.api.types.is_numeric_dtype(result_df[col]):
+                                    continue
 
                                 values = result_df[col].values
                                 valid_indices = ~np.isnan(values)
@@ -256,8 +331,8 @@ class IndicatorMixin:
                                     valid_x = x[valid_indices]
                                     valid_values = values[valid_indices]
 
-                                    # 决定绘制在哪个坐标轴上
-                                    target_ax = self.indicator_ax
+                                    # 决定绘制在哪个坐标轴上（R267: 副图指标按区域归属 indicator_ax/indicator_ax2）
+                                    target_ax = target_indicator_ax
                                     if col.startswith('BB') or name in ['MA', 'EMA', 'SMA', 'WMA']:
                                         target_ax = self.price_ax
 
@@ -389,9 +464,9 @@ class IndicatorMixin:
             # 发出指标变更信号
             self.indicator_changed.emit(indicator)
 
-            # 如果有数据，重新绘制图表
+            # 如果有数据，重新绘制图表（R267: 使用完整数据源）
             if hasattr(self, 'current_kdata') and self.current_kdata is not None:
-                self.update_chart({'kdata': self.current_kdata})
+                self.update_chart({'kdata': self._get_render_kdata() if hasattr(self, '_get_render_kdata') else self.current_kdata})
 
             logger.info(f"指标变更为: {indicator}")
 
@@ -411,11 +486,20 @@ class IndicatorMixin:
     def _on_indicator_changed(self, indicators):
         """内部指标变更处理"""
         self.active_indicators = indicators
-        # 修复：传入当前K线数据，否则update_chart会因data=None直接返回
+        # 修复：传入当前K线数据，否则update_chart会因data=None直接返回（R267: 使用完整数据源）
         if hasattr(self, 'current_kdata') and self.current_kdata is not None and not self.current_kdata.empty:
-            self.update_chart({'kdata': self.current_kdata})
+            self.update_chart({'kdata': self._get_render_kdata() if hasattr(self, '_get_render_kdata') else self.current_kdata})
         else:
-            logger.warning("_on_indicator_changed: 没有可用的K线数据，无法更新图表")
+            # R264: current_kdata 为空（如切到无数据的周期/首次加载失败）时，
+            # 主动重新拉取当前股票K线，而不是静默跳过 → 修复"切换指标多次后无K线数据"
+            logger.warning("_on_indicator_changed: 没有可用的K线数据，尝试重新加载当前股票")
+            try:
+                stock_code = (getattr(self, '_current_stock_code', None)
+                              or getattr(self, 'current_stock_code', None))
+                if stock_code and hasattr(self, 'load_data'):
+                    self.load_data(stock_code, force_reload=True)
+            except Exception as e:
+                logger.error(f"_on_indicator_changed 重新加载K线失败: {e}")
 
     def _on_calculation_progress(self, progress: int, message: str):
         """处理计算进度"""

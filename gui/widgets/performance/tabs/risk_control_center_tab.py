@@ -1423,41 +1423,6 @@ class ModernRiskControlCenterTab(QWidget):
             if not alerts:
                 return
 
-            # 更新预警表格（如果存在）
-            if hasattr(self, 'alerts_table'):
-                self.alerts_table.setRowCount(len(alerts))
-
-                for row, alert in enumerate(alerts):
-                    # 时间
-                    time_item = QTableWidgetItem(alert.get('timestamp', ''))
-                    self.alerts_table.setItem(row, 0, time_item)
-
-                    # 类型
-                    type_item = QTableWidgetItem(alert.get('category', ''))
-                    self.alerts_table.setItem(row, 1, type_item)
-
-                    # 等级
-                    level_item = QTableWidgetItem(alert.get('level', ''))
-                    # 根据等级设置颜色
-                    if alert.get('level') in ['critical', 'extreme']:
-                        level_item.setBackground(QColor("#ffebee"))
-                    elif alert.get('level') == 'high':
-                        level_item.setBackground(QColor("#fff3e0"))
-
-                    self.alerts_table.setItem(row, 2, level_item)
-
-                    # 消息
-                    message_item = QTableWidgetItem(alert.get('message', ''))
-                    self.alerts_table.setItem(row, 3, message_item)
-
-                    # 状态
-                    status = "已解决" if alert.get('resolved', False) else "待处理"
-                    status_item = QTableWidgetItem(status)
-                    if not alert.get('resolved', False):
-                        status_item.setBackground(QColor("#fff3e0"))
-
-                    self.alerts_table.setItem(row, 4, status_item)
-
         except Exception as e:
             logger.error(f"更新预警显示失败: {e}")
 

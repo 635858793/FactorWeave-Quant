@@ -233,15 +233,20 @@ class EventCoordinator(BaseCoordinator):
 
             # 1. 优化：优先使用事件中的K线数据，避免重复查询
             kline_data = None
+            asset_type = getattr(event, 'asset_type', AssetType.STOCK_A)
             if hasattr(event, 'kline_data') and event.kline_data is not None:
                 logger.info(f"使用LeftPanel预加载的K线数据: {event.stock_code}")
                 kline_data = event.kline_data
                 logger.debug(f"预加载数据行数: {len(kline_data) if hasattr(kline_data, '__len__') else 'N/A'}")
-            else:
+                # R274: 校验预加载数据质量 - 少于2行视为退化数据（如仅1条实时收盘价/网络失败产物），
+                # 直接使用会导致图表只显示一天数据；降级走 request_data 重新请求完整K线
+                if hasattr(kline_data, '__len__') and len(kline_data) < 2:
+                    logger.warning(
+                        f"预加载K线数据过少({len(kline_data)}行)，疑似退化数据，降级重新请求: {event.stock_code}")
+                    kline_data = None
+            if kline_data is None:
                 # 降级：重新查询K线数据
-                # 从事件中获取资产类型（默认为股票）
-                asset_type = getattr(event, 'asset_type', AssetType.STOCK_A)
-                logger.info(f"事件中无K线数据，开始请求K线数据: {event.stock_code} ({asset_type.value})")
+                logger.info(f"事件中无可用K线数据，开始请求K线数据: {event.stock_code} ({asset_type.value})")
                 kline_data_response = await self._data_manager.request_data(
                     stock_code=event.stock_code,
                     data_type='kdata',

@@ -871,11 +871,7 @@ class ModernTradingExecutionMonitorTab(QWidget):
     def _on_theme_changed(self):
         """主题变化回调"""
         try:
-            # 更新所有卡片的主题样式
-            if hasattr(self, 'cards'):
-                for card in self.cards.values():
-                    if hasattr(card, 'update_theme'):
-                        card.update_theme()
+            # 更新所有卡片的主题样式 (execution_cards 活分支)
             if hasattr(self, 'execution_cards'):
                 for card in self.execution_cards.values():
                     if hasattr(card, 'update_theme'):

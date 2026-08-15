@@ -3,13 +3,13 @@
 """
 R244 测试: 孤儿发布事件集中注册
 
-背景: 21 个事件仅发布无订阅 (B 类 ORPHAN_PUB, 4 路子智能体审计确认, 发布点事件名零差异):
-     - 字符串形式 13 个 (performance.periodic_report 等)
-     - 类对象形式 8 个 (UpdateHistoryEvent 等, 注册名 = 类名)
+背景: 事件仅发布无订阅 (B 类 ORPHAN_PUB, 4 路子智能体审计确认, 发布点事件名零差异):
+     - 字符串形式 14 个 (performance.periodic_report 等, 含 R292 追加 service.orphan_scan_completed)
+     - 类对象形式 9 个 (UpdateHistoryEvent 等, 注册名 = 类名, 含 R292 追加 StrategyConfigsLoadedEvent)
      subscribe 自动注册不覆盖无订阅方事件 -> 每次 publish 触发未注册 warning,
      需启动早期 register_event_type 显式注册.
 
-- T01: register_orphan_event_types 注册全部 21 个事件名
+- T01: register_orphan_event_types 注册全部 23 个事件名
 - T02: 已注册字符串事件 publish 不再触发未注册 warning
 - T03: 重复注册幂等
 - T04: 注册函数挂在 ServiceBootstrap.__init__ 启动链路中
@@ -23,7 +23,7 @@ from core.services.service_bootstrap import (
     register_orphan_event_types,
 )
 
-# 权威注册清单 (与 4 路审计子智能体交叉验证结果一致)
+# 权威注册清单 (与 4 路审计子智能体交叉验证结果一致; R292 追加 2 项)
 EXPECTED = [
     # 字符串形式 (13)
     'performance.periodic_report',
@@ -48,6 +48,9 @@ EXPECTED = [
     'TaskFailedEvent',
     'DataRefreshRequestedEvent',
     'DataRefreshCompletedEvent',
+    # R292 追加: 启动期漏注册的孤儿发布事件 (strategy_service.py:533-538 / service_bootstrap.py:357-364)
+    'StrategyConfigsLoadedEvent',
+    'service.orphan_scan_completed',
 ]
 
 

@@ -13,7 +13,7 @@ from loguru import logger
 import time
 import threading
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Callable, Union
+from typing import Dict, List, Optional, Any, Callable, Union, Tuple
 from enum import Enum, auto
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -318,6 +318,21 @@ class CircuitBreaker:
         return (self.failure_count >= self.config.failure_threshold or
                 failure_rate >= self.config.failure_rate_threshold)
 
+    def force_open(self) -> None:
+        """R277: 立即开启熔断（确定性故障如连接失败，不等滑动窗口统计）
+
+        正常熔断需要 sliding_window_size 次请求后才评估失败率，单次连接失败
+        永远不会触发（failure_count 最高=窗口大小 < threshold）。对"连接失败"
+        这类确定性故障，直接置 OPEN 并填满失败历史，恢复期后进入 HALF_OPEN
+        由实际请求验证是否恢复。
+        """
+        with self._lock:
+            self.state = CircuitBreakerState.OPEN
+            self.last_failure_time = datetime.now()
+            for _ in range(self.config.sliding_window_size):
+                self.request_history.append(False)
+            logger.warning(f"熔断器 {self.source_id} 因确定性故障立即开启")
+
 
 class DataSourceRouter:
     """
@@ -347,6 +362,10 @@ class DataSourceRouter:
         self.data_sources: Dict[str, DataSourcePluginAdapter] = {}
         self.metrics: Dict[str, DataSourceMetrics] = {}
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+
+        # R279 快速失败熔断：连续失败计数（无需等待统计型滑动窗口即熔断）
+        self._consecutive_failures: Dict[str, int] = {}
+        self._fast_fail_threshold = 3  # 连续失败 3 次即视为确定性故障，即时熔断
 
         # 路由策略
         self.routing_strategies: Dict[RoutingStrategy, IRoutingStrategy] = {}
@@ -397,7 +416,11 @@ class DataSourceRouter:
 
                 self.data_sources[source_id] = adapter
                 self.metrics[source_id] = DataSourceMetrics(weight=weight)
-                self.circuit_breakers[source_id] = CircuitBreaker(source_id, self.circuit_breaker_config)
+                # R279 修复：重复注册保留既有熔断器（含 OPEN/HALF_OPEN 状态与失败历史）。
+                # 此前无条件新建 CircuitBreaker 会把已熔断的源重置为 CLOSED，
+                # 插件加载/数据源同步/插件发现等重复注册点都会让熔断状态"切换后失效"。
+                if source_id not in self.circuit_breakers:
+                    self.circuit_breakers[source_id] = CircuitBreaker(source_id, self.circuit_breaker_config)
 
                 # 创建优先级策略（如果不存在）
                 if RoutingStrategy.PRIORITY not in self.routing_strategies:
@@ -617,7 +640,8 @@ class DataSourceRouter:
                               source_id: str,
                               success: bool,
                               response_time_ms: float = 0,
-                              error: Optional[str] = None) -> None:
+                              error: Optional[str] = None,
+                              from_health_check: bool = False) -> None:
         """
         记录请求结果
 
@@ -626,6 +650,7 @@ class DataSourceRouter:
             success: 是否成功
             response_time_ms: 响应时间（毫秒）
             error: 错误信息（可选）
+            from_health_check: 是否为健康检查线程产生的探测结果（R283）
         """
         try:
             with self._lock:
@@ -641,11 +666,30 @@ class DataSourceRouter:
 
                 if success:
                     metrics.successful_requests += 1
-                    circuit_breaker.record_success()
+                    # R283: 健康检查成功不推进熔断状态机、不清零连续失败计数。
+                    # 1) 不清零 _consecutive_failures：健康检查线程每 30s 探测成功会把
+                    #    快速熔断计数永久清零，真实故障源的连续失败永远到不了阈值；
+                    # 2) 不调 record_success：HALF_OPEN 下 3 次成功会将熔断器恢复 CLOSED，
+                    #    30s 探测周期 + 60s 恢复期 ≈ 90s 内"治愈"已熔断源，导致切换股票
+                    #    时已发现不可用的源再次全量扫描。熔断恢复只能由真实业务请求成功触发。
+                    if not from_health_check:
+                        circuit_breaker.record_success()
+                        self._consecutive_failures[source_id] = 0
                 else:
                     metrics.failed_requests += 1
                     circuit_breaker.record_failure()
-                    # logger.warning(f"数据源 {source_id} 请求失败: {error}")
+                    # R279 快速失败熔断：连续失败达到阈值即视为确定性故障即时熔断。
+                    # 统计型熔断需 sliding_window_size(10) 次请求后才评估失败率，
+                    # 单次/数次失败（空数据、超时、连接后拉取失败被吞成空）永不触发，
+                    # 导致"切换股票后仍遍历不可用数据源"。连续失败特征是确定性故障，
+                    # 达到阈值直接 force_open，恢复期后由实际请求验证是否恢复。
+                    consecutive = self._consecutive_failures.get(source_id, 0) + 1
+                    self._consecutive_failures[source_id] = consecutive
+                    if consecutive >= self._fast_fail_threshold:
+                        logger.warning(
+                            f"数据源 {source_id} 连续失败 {consecutive} 次，触发快速熔断")
+                        circuit_breaker.force_open()
+                        self._consecutive_failures[source_id] = 0
 
                 # 更新平均响应时间
                 if response_time_ms > 0:
@@ -661,6 +705,29 @@ class DataSourceRouter:
 
         except Exception as e:
             logger.error(f"记录请求结果失败: {str(e)}")
+
+    def mark_unavailable(self, source_id: str) -> None:
+        """R277: 标记数据源即时不可用（连接失败等确定性故障）
+
+        TET failover 中数据源连接失败（RemoteDisconnected 等）属于确定性故障，
+        不应等待滑动窗口统计熔断。此处直接开启熔断器并更新健康分数，
+        后续 get_available_sources 的 can_execute 过滤将剔除该源。
+        """
+        try:
+            with self._lock:
+                breaker = self.circuit_breakers.get(source_id)
+                if breaker is not None:
+                    breaker.force_open()
+                metrics = self.metrics.get(source_id)
+                if metrics is not None:
+                    metrics.total_requests += 1
+                    metrics.failed_requests += 1
+                    metrics.last_request_time = datetime.now()
+                self._consecutive_failures[source_id] = 0  # R279: 已即时熔断，清零连续计数
+                self._update_health_score(source_id)
+                logger.warning(f"数据源 {source_id} 已标记不可用（确定性故障即时熔断）")
+        except Exception as e:
+            logger.error(f"标记数据源不可用失败 {source_id}: {e}")
 
     def get_source_metrics(self, source_id: str) -> Optional[DataSourceMetrics]:
         """获取数据源指标"""
@@ -683,25 +750,123 @@ class DataSourceRouter:
         获取可用的数据源列表（公共接口）
 
         Args:
-            routing_request: 路由请求对象，包含asset_type等信息
+            routing_request: 路由请求对象，包含asset_type、data_type等信息
 
         Returns:
             List[str]: 可用数据源ID列表
         """
         try:
             asset_type = routing_request.asset_type
-            return self._get_available_sources(asset_type)
+            data_type = getattr(routing_request, 'data_type', None)
+            sources = self._get_available_sources(asset_type, data_type)
+            # R275 修复：健康检测未在 TET 主链路生效——熔断过滤此前只存在于
+            # route_request（仅 deprecated GUI 使用），TET failover 走本方法时
+            # 仍会把熔断/不健康的插件纳入候选尝试。此处统一过滤 can_execute。
+            healthy_sources = [
+                sid for sid in sources
+                if self.circuit_breakers.get(sid) is not None
+                and self.circuit_breakers[sid].can_execute()
+            ]
+            if healthy_sources:
+                return healthy_sources
+            if sources:
+                logger.warning(f"数据源 {sources} 全部处于熔断状态，TET failover 将快速失败")
+            return healthy_sources
         except Exception as e:
             logger.error(f"获取可用数据源失败: {e}")
             return []
 
-    def _get_available_sources(self, asset_type: AssetType) -> List[str]:
-        """获取支持指定资产类型的数据源"""
+    def get_prioritized_sources(self, routing_request) -> List[str]:
+        """R286 修复1：获取按"健康度 + 质量画像"排序的数据源候选列表
+
+        与 get_available_sources（仅熔断过滤、默认源恒第一）不同：
+        候选源按 健康度(health_score/success_rate/response_time) 与
+        DataQualityRiskManager.get_source_risk_profile 近 7 天平均质量分
+        加权排序，质量/健康度高者优先尝试——failover 不再是"顺序碰运气"，
+        而是"优先使用被验证过的优质数据源"。
+
+        Args:
+            routing_request: 路由请求对象，包含asset_type、data_type等信息
+
+        Returns:
+            List[str]: 按质量/健康度降序的可用数据源ID列表
+        """
+        try:
+            asset_type = routing_request.asset_type
+            data_type = getattr(routing_request, 'data_type', None)
+            sources = self._get_available_sources(asset_type, data_type)
+            healthy_sources = [
+                sid for sid in sources
+                if self.circuit_breakers.get(sid) is not None
+                and self.circuit_breakers[sid].can_execute()
+            ]
+            if not healthy_sources:
+                if sources:
+                    logger.warning(f"数据源 {sources} 全部处于熔断状态，TET failover 将快速失败")
+                return healthy_sources
+
+            # 各源近 7 天平均质量分（0-1），无画像的源给中性分 0.5（不惩罚也不奖励）
+            quality_scores = self._get_source_quality_scores()
+
+            def sort_key(source_id: str) -> Tuple[float, float]:
+                metric = self.metrics.get(source_id, DataSourceMetrics())
+                # 健康度：health_score + success_rate + 响应时间（与 HealthBasedRoutingStrategy 同构）
+                health = (metric.health_score * 0.4
+                          + metric.success_rate * 0.4
+                          + max(0.0, 1.0 - metric.avg_response_time_ms / 10000.0) * 0.2)
+                quality = quality_scores.get(source_id, 0.5)
+                # 综合分：健康度为主(0.6)，质量画像为辅(0.4)；tie-break 用健康度
+                return (health * 0.6 + quality * 0.4, health)
+
+            prioritized = sorted(healthy_sources, key=sort_key, reverse=True)
+            if prioritized != healthy_sources:
+                logger.debug(f"R286 数据源质量加权排序: {prioritized}")
+            return prioritized
+        except Exception as e:
+            logger.error(f"获取优先级数据源失败: {e}")
+            return []
+
+    def _get_source_quality_scores(self) -> Dict[str, float]:
+        """R286 修复1：各数据源近 7 天平均质量分（0-1 归一化）
+
+        数据来源：DataQualityRiskManager.get_source_risk_profile 聚合的
+        risk_history（由 EnhancedDataQualityMonitor.monitor_data_quality
+        在 TET 主链路按真实数据源写入）。无画像/评估失败 → 中性 0.5。
+        """
+        scores: Dict[str, float] = {}
+        try:
+            from core.data_quality_risk_manager import DataQualityRiskManager
+            risk_manager = getattr(self, '_quality_manager', None)
+            if risk_manager is None:
+                risk_manager = DataQualityRiskManager()
+                self._quality_manager = risk_manager
+            for sid in self.data_sources:
+                try:
+                    profile = risk_manager.get_source_risk_profile(sid, days=7)
+                    avg = profile.get('average_quality_score')
+                    if avg is not None:
+                        scores[sid] = max(0.0, min(1.0, float(avg) / 100.0))
+                except Exception as source_error:
+                    logger.debug(f"获取数据源 {sid} 质量画像失败: {source_error}")
+        except Exception as e:
+            logger.debug(f"初始化质量画像管理器失败: {e}")
+        return scores
+
+    def _get_available_sources(self, asset_type: AssetType,
+                               data_type: Optional[DataType] = None) -> List[str]:
+        """获取支持指定资产类型（及数据能力）的数据源
+
+        R275：原实现仅按 asset_type 过滤，导致"仅实时"插件（如 level2）被列入
+        历史 K 线候选、以及"仅历史"插件进入实时行情候选，逐一尝试失败后不仅
+        浪费 per_source_timeout，还被误记失败而熔断。此处增加数据能力维度过滤。
+        """
         available = []
 
         # 首先尝试使用配置的优先级
         if asset_type in self.asset_priorities:
-            available.extend(self.asset_priorities[asset_type])
+            for sid in self.asset_priorities[asset_type]:
+                if data_type is None or self._supports_data_type(sid, data_type):
+                    available.append(sid)
 
         # 然后检查其他支持该资产类型的数据源
         for source_id, adapter in self.data_sources.items():
@@ -711,22 +876,41 @@ class DataSourceRouter:
                     plugin_info = adapter.get_plugin_info()
                     logger.debug(f"数据源 {source_id} 插件信息获取成功，支持的资产类型: {plugin_info.supported_asset_types}")
                     if asset_type in plugin_info.supported_asset_types:
+                        if data_type is not None and not self._supports_data_type(source_id, data_type):
+                            logger.debug(f"数据源 {source_id} 不支持数据类型 {data_type}，跳过")
+                            continue
                         available.append(source_id)
                         logger.debug(f"数据源 {source_id} 支持资产类型 {asset_type}")
                 except Exception as e:
-                    import traceback
-                    logger.error(f"检查数据源 {source_id} 支持的资产类型失败: {str(e)}")
-                    logger.error(f"详细错误信息: {traceback.format_exc()}")
-                    # 尝试获取适配器类型信息
-                    logger.error(f"适配器类型: {type(adapter)}")
-                    if hasattr(adapter, '__class__'):
-                        logger.error(f"适配器类名: {adapter.__class__.__name__}")
-                    if hasattr(adapter, 'get_plugin_info'):
-                        logger.error(f"适配器有get_plugin_info方法: True")
-                    else:
-                        logger.error(f"适配器没有get_plugin_info方法: False")
+                    # R280 修复：部分注册对象并非完整插件实现（如 Level2Config/MiniQMTConfig
+                    # 配置类、CryptoSentimentPlugin/ExordeSentimentPlugin 缺 plugin_info），
+                    # get_plugin_info 抛 AttributeError。此类源无法确认支持该资产类型 → 跳过。
+                    # 此前此处打印完整 traceback + 适配器类型调试信息，每次请求刷屏 ERROR。
+                    logger.debug(f"数据源 {source_id} 无法获取插件信息（视为不支持，跳过）: {e}")
 
         return available
+
+    def _supports_data_type(self, source_id: str, data_type: DataType) -> bool:
+        """判断数据源是否声明支持指定数据类型
+
+        无法获取插件信息/声明缺失时保守返回 True（不过滤），避免误伤。
+        """
+        try:
+            adapter = self.data_sources.get(source_id)
+            if adapter is None:
+                return True
+            plugin_info = adapter.get_plugin_info()
+            supported = getattr(plugin_info, 'supported_data_types', None)
+            if not supported:
+                return True
+            if data_type in supported:
+                return True
+            # 兼容字符串声明（如 'historical_kline'）
+            return any(str(dt).lower() == data_type.value.lower()
+                       or (isinstance(dt, str) and dt.lower() == data_type.value.lower())
+                       for dt in supported)
+        except Exception:
+            return True
 
     def has_data_source(self, source_id: str) -> bool:
         """
@@ -792,12 +976,13 @@ class DataSourceRouter:
                             health_result = adapter.health_check()
                             response_time = (time.time() - start_time) * 1000
 
-                            # 记录结果
+                            # 记录结果（R283: 标记为健康检查来源，成功不清零真实请求的连续失败计数）
                             self.record_request_result(
                                 source_id,
                                 health_result.is_healthy,
                                 response_time,
-                                health_result.message
+                                health_result.message,
+                                from_health_check=True
                             )
 
                             # 触发健康状态变化事件
@@ -806,7 +991,7 @@ class DataSourceRouter:
 
                         except Exception as e:
                             logger.error(f"数据源 {source_id} 健康检查失败: {str(e)}")
-                            self.record_request_result(source_id, False, 0, str(e))
+                            self.record_request_result(source_id, False, 0, str(e), from_health_check=True)
 
             except Exception as e:
                 logger.error(f"健康检查工作线程异常: {str(e)}")

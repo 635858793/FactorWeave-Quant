@@ -101,9 +101,9 @@ class TestSubmitOrderEventFields:
         mock_iface = MockTradingInterface()
 
         with patch('core.trading.order_executor.OrderRepository'):
-            with patch('core.trading.order_executor.XTPProTradingInterface'):
-                with patch('core.trading.order_executor.CTPTradingInterface'):
-                    with patch('core.trading.order_executor.XTPTradingInterface'):
+            with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+                with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                    with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                         executor = OrderExecutor(container, event_bus)
                         executor.repository = MagicMock()
                         executor.repository.update_order = MagicMock()
@@ -128,9 +128,9 @@ class TestSubmitOrderEventFields:
         mock_iface = MockTradingInterface()
 
         with patch('core.trading.order_executor.OrderRepository'):
-            with patch('core.trading.order_executor.XTPProTradingInterface'):
-                with patch('core.trading.order_executor.CTPTradingInterface'):
-                    with patch('core.trading.order_executor.XTPTradingInterface'):
+            with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+                with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                    with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                         executor = OrderExecutor(container, event_bus)
                         executor.repository = MagicMock()
                         executor.repository.update_order = MagicMock()
@@ -154,9 +154,9 @@ class TestSubmitOrderEventFields:
         mock_iface = MockTradingInterface()
 
         with patch('core.trading.order_executor.OrderRepository'):
-            with patch('core.trading.order_executor.XTPProTradingInterface'):
-                with patch('core.trading.order_executor.CTPTradingInterface'):
-                    with patch('core.trading.order_executor.XTPTradingInterface'):
+            with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+                with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                    with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                         executor = OrderExecutor(container, event_bus)
                         executor.repository = MagicMock()
                         executor.repository.update_order = MagicMock()
@@ -195,9 +195,9 @@ class TestSubmitOrdersBatchEventFields:
         repo.update_orders_batch = MagicMock()
 
         with patch('core.trading.order_executor.OrderRepository'):
-            with patch('core.trading.order_executor.XTPProTradingInterface'):
-                with patch('core.trading.order_executor.CTPTradingInterface'):
-                    with patch('core.trading.order_executor.XTPTradingInterface'):
+            with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+                with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                    with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                         executor = OrderExecutor(container, event_bus)
                         executor.repository = repo
 
@@ -228,9 +228,9 @@ class TestSubmitOrdersBatchEventFields:
         repo.update_orders_batch = MagicMock()
 
         with patch('core.trading.order_executor.OrderRepository'):
-            with patch('core.trading.order_executor.XTPProTradingInterface'):
-                with patch('core.trading.order_executor.CTPTradingInterface'):
-                    with patch('core.trading.order_executor.XTPTradingInterface'):
+            with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+                with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                    with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                         executor = OrderExecutor(container, event_bus)
                         executor.repository = repo
 
@@ -256,9 +256,9 @@ class TestSubmitOrdersBatchEventFields:
         repo.update_orders_batch = MagicMock()
 
         with patch('core.trading.order_executor.OrderRepository'):
-            with patch('core.trading.order_executor.XTPProTradingInterface'):
-                with patch('core.trading.order_executor.CTPTradingInterface'):
-                    with patch('core.trading.order_executor.XTPTradingInterface'):
+            with patch('core.trading.interfaces.xtp_pro_trading_interface.XTPProTradingInterface'):
+                with patch('core.trading.interfaces.ctp_trading_interface.CTPTradingInterface'):
+                    with patch('core.trading.interfaces.xtp_trading_interface.XTPTradingInterface'):
                         executor = OrderExecutor(container, event_bus)
                         executor.repository = repo
 

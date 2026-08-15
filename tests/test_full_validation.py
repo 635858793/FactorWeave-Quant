@@ -56,11 +56,6 @@ class TestImportValidation:
         from core.database.table_manager import TableSchemaRegistry
         assert TableSchemaRegistry is not None
 
-    def test_import_table_schemas(self):
-        """验证表结构模块导入"""
-        from core.database.table_schemas import DuckDBTableSchemas
-        assert DuckDBTableSchemas is not None
-
     def test_import_enhanced_data_manager(self):
         """验证增强数据管理器导入"""
         from core.services.enhanced_data_manager import DataQualityMonitor
@@ -509,14 +504,16 @@ class TestImportValidation:
         assert IndicatorMarketDialog is not None
 
     def test_import_connection_pool_config_dialog(self):
-        """验证连接池配置对话框导入"""
-        from gui.dialogs import ConnectionPoolConfigDialog
-        assert ConnectionPoolConfigDialog is not None
+        """验证连接池配置对话框导入（R282: 原 ConnectionPoolConfigDialog 类不存在，
+        等价功能由 ConnectionPoolManagerDialog 提供，连接池配置组件 ConnectionPoolConfigWidget 复用）"""
+        from gui.dialogs import ConnectionPoolManagerDialog
+        assert ConnectionPoolManagerDialog is not None
 
     def test_import_optimized_duckdb_import_dialog(self):
-        """验证优化的DuckDB导入对话框导入"""
-        from gui.dialogs import OptimizedDuckDBImportDialog
-        assert OptimizedDuckDBImportDialog is not None
+        """验证DuckDB导入对话框导入（R282: OptimizedDuckDBImportDialog 类不存在且模块为空文件，
+        DuckDB 数据导入由统一数据管理对话框 UnifiedDataManagementDialog 覆盖）"""
+        from gui.dialogs import UnifiedDataManagementDialog
+        assert UnifiedDataManagementDialog is not None
 
 
 # ==================== 2. UnifiedSQLiteAccess 验证测试 ====================

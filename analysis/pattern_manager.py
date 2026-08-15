@@ -12,7 +12,7 @@ import time
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd
-from analysis.pattern_recognition import PatternRecognizer
+from analysis.pattern_recognition import PatternRecognizer, EnhancedPatternRecognizer
 from analysis.pattern_base import (
     BasePatternRecognizer, PatternConfig, PatternResult,
     PatternAlgorithmFactory, SignalType
@@ -245,8 +245,12 @@ class PatternManager:
                         algorithm_code=row[12] if len(row) > 12 else "",
                         parameters=parameters,
                         is_active=bool(row[9]),
-                        success_rate=row[15] if len(row) > 15 and row[15] is not None and row[15] > 0 else None,
-                        risk_level=row[16] if len(row) > 16 and row[16] is not None else 'medium'
+                        # 注意：unified_indicator_service pattern_types 列序为
+                        # id,name,english_name,category,signal_type,description,min_periods,max_periods,
+                        # confidence_threshold,is_active,created_at,updated_at,algorithm_code,parameters,
+                        # success_rate(14),risk_level(15)
+                        success_rate=row[14] if len(row) > 14 and row[14] is not None and row[14] > 0 else None,
+                        risk_level=row[15] if len(row) > 15 and row[15] is not None else 'medium'
                     ))
                 except Exception as e:
                     logger.warning(f"解析形态配置失败: {e}")
@@ -485,7 +489,7 @@ class PatternManager:
                 id=0,  # 将由数据库自动分配
                 name=name,
                 english_name=name.lower().replace(' ', '_'),
-                category=PatternCategory.COMPLEX,
+                category='complex',  # R246: 原 PatternCategory.COMPLEX 未定义（NameError 被吞返回 False），改字符串与 pattern_base._COMPLEX_ALIASES 一致
                 signal_type=SignalType.NEUTRAL,
                 description=f"通达信导入的形态: {name}",
                 min_periods=1,
@@ -518,7 +522,7 @@ class PatternManager:
                 ''', (
                     config.name,
                     config.english_name,
-                    config.category.value,
+                    getattr(config.category, 'value', config.category),  # R246: category 为 str 时原 .value 抛 AttributeError
                     config.signal_type.value,
                     config.description,
                     config.min_periods,
@@ -596,6 +600,31 @@ for i in range(len(kdata)):
 '''
 
         return algorithm_template
+
+    def identify_all_patterns(self, kdata, pattern_types: Optional[List[str]] = None,
+                              confidence_threshold: float = 0.5) -> List[Dict]:
+        """识别形态（兼容接口）— R246: 委托 EnhancedPatternRecognizer.identify_patterns。
+
+        get_pattern_statistics（L621/623）此前调用未定义的 self.identify_all_patterns，
+        抛 AttributeError 被 L665 except 吞掉导致统计恒空。现委托增强识别器，返回
+        PatternResult.to_dict() 列表（键含 pattern_category/signal/confidence 等，
+        完全覆盖 get_pattern_statistics 的统计消费键）。
+
+        Args:
+            kdata: K线数据
+            pattern_types: 要识别的形态类型列表，None 表示识别所有激活形态
+            confidence_threshold: 置信度阈值
+
+        Returns:
+            dict 列表（PatternResult.to_dict()），无结果时返回空列表
+        """
+        recognizer = EnhancedPatternRecognizer()
+        results = recognizer.identify_patterns(
+            kdata,
+            confidence_threshold=confidence_threshold,
+            pattern_types=pattern_types,
+        )
+        return [r.to_dict() for r in results]
 
     def get_pattern_statistics(self, kdata, pattern_name: str = None) -> Dict:
         """

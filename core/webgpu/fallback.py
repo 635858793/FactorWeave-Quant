@@ -15,6 +15,9 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 
+# R292 涨跌停精确判定（按板块计算涨/跌停价，替代固定 4.8% 阈值）
+from core.rendering.limit_price import classify_limit_up_down, extract_symbol
+
 # 导入虚拟滚动渲染器和数据采样优化器
 try:
     from core.optimization.volume_virtual_renderer import VolumeVirtualRenderer
@@ -50,7 +53,6 @@ except ImportError as e:
 
 from .compatibility import CompatibilityReport
 from .environment import GPUSupportLevel
-from .webgpu_renderer import WebGPURenderer
 
 
 class RenderBackend(Enum):
@@ -72,7 +74,7 @@ class ChartRenderer(Protocol):
         """渲染成交量"""
         ...
 
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None) -> bool:
+    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
         """渲染线图"""
         ...
 
@@ -114,7 +116,7 @@ class BaseRenderer(ABC):
         pass
 
     @abstractmethod
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None) -> bool:
+    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
         """渲染线图"""
         pass
 
@@ -142,184 +144,6 @@ class BaseRenderer(ABC):
         )
 
 
-
-class OpenGLRenderer(BaseRenderer):
-    """OpenGL渲染器"""
-
-    def __init__(self):
-        super().__init__(RenderBackend.OPENGL)
-        self._gl_context = None
-
-    def initialize(self, context: Optional[Any] = None) -> bool:
-        """初始化OpenGL渲染器"""
-        try:
-            logger.info("初始化OpenGL渲染器...")
-
-            # 尝试导入OpenGL
-            try:
-                import OpenGL.GL as gl
-                self._gl_context = gl
-                self._initialized = True
-                logger.info("OpenGL渲染器初始化成功")
-                return True
-            except ImportError:
-                logger.warning("OpenGL库未安装")
-                return False
-
-        except Exception as e:
-            logger.error(f"OpenGL渲染器初始化失败: {e}")
-            return False
-
-    def render_candlesticks(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
-        """渲染K线图"""
-        if not self._initialized:
-            return False
-
-        try:
-            start_time = time.time()
-
-            logger.debug(f"OpenGL渲染K线图: {len(data)}个数据点")
-
-            # 实际项目中这里会使用OpenGL API绘制
-
-            render_time = time.time() - start_time
-            self._update_performance_stats(render_time)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"OpenGL K线渲染失败: {e}")
-            return False
-
-    def render_volume(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
-        """渲染成交量"""
-        if not self._initialized:
-            return False
-
-        try:
-            start_time = time.time()
-
-            logger.debug(f"OpenGL渲染成交量: {len(data)}个数据点")
-
-            render_time = time.time() - start_time
-            self._update_performance_stats(render_time)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"OpenGL成交量渲染失败: {e}")
-            return False
-
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None) -> bool:
-        """渲染线图"""
-        if not self._initialized:
-            return False
-
-        try:
-            start_time = time.time()
-
-            logger.debug(f"OpenGL渲染线图: {len(data)}个数据点")
-
-            render_time = time.time() - start_time
-            self._update_performance_stats(render_time)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"OpenGL线图渲染失败: {e}")
-            return False
-
-    def clear(self) -> None:
-        """清空渲染内容"""
-        if self._initialized:
-            logger.debug("OpenGL清空渲染内容")
-
-class Canvas2DRenderer(BaseRenderer):
-    """Canvas 2D渲染器"""
-
-    def __init__(self):
-        super().__init__(RenderBackend.CANVAS2D)
-        self._canvas = None
-
-    def initialize(self, context: Optional[Any] = None) -> bool:
-        """初始化Canvas 2D渲染器"""
-        try:
-            logger.info("初始化Canvas 2D渲染器...")
-
-            # 模拟Canvas 2D上下文创建
-            self._canvas = {"type": "canvas2d", "context": context}
-
-            self._initialized = True
-            logger.info("Canvas 2D渲染器初始化成功")
-            return True
-
-        except Exception as e:
-            logger.error(f"Canvas 2D渲染器初始化失败: {e}")
-            return False
-
-    def render_candlesticks(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
-        """渲染K线图"""
-        if not self._initialized:
-            return False
-
-        try:
-            start_time = time.time()
-
-            logger.debug(f"Canvas 2D渲染K线图: {len(data)}个数据点")
-
-            # 实际项目中这里会使用Canvas 2D API绘制
-
-            render_time = time.time() - start_time
-            self._update_performance_stats(render_time)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Canvas 2D K线渲染失败: {e}")
-            return False
-
-    def render_volume(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
-        """渲染成交量"""
-        if not self._initialized:
-            return False
-
-        try:
-            start_time = time.time()
-
-            logger.debug(f"Canvas 2D渲染成交量: {len(data)}个数据点")
-
-            render_time = time.time() - start_time
-            self._update_performance_stats(render_time)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Canvas 2D成交量渲染失败: {e}")
-            return False
-
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None) -> bool:
-        """渲染线图"""
-        if not self._initialized:
-            return False
-
-        try:
-            start_time = time.time()
-
-            logger.debug(f"Canvas 2D渲染线图: {len(data)}个数据点")
-
-            render_time = time.time() - start_time
-            self._update_performance_stats(render_time)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Canvas 2D线图渲染失败: {e}")
-            return False
-
-    def clear(self) -> None:
-        """清空渲染内容"""
-        if self._initialized:
-            logger.debug("Canvas 2D清空渲染内容")
 
 class MatplotlibRenderer(BaseRenderer):
     """Matplotlib渲染器 - 集成虚拟滚动优化"""
@@ -391,6 +215,10 @@ class MatplotlibRenderer(BaseRenderer):
                 
             up_color = style.get('up_color', '#ff0000')
             down_color = style.get('down_color', '#00ff00')
+            # R292 修复：fallback 链 MatplotlibRenderer 补四色（涨红/跌绿/涨停橙/跌停紫），
+            # 与 optimization/chart_renderer.py 判定一致（按板块精确涨/跌停价）。
+            limit_up_color = style.get('limit_up_color', '#FF9800')
+            limit_down_color = style.get('limit_down_color', '#AB47BC')
             alpha = style.get('alpha', 1.0)
             
             # 使用给定的x参数或根据datetime轴标志选择适当的x轴
@@ -437,8 +265,14 @@ class MatplotlibRenderer(BaseRenderer):
             rights = xvals + candle_width / 2
 
             is_up = closes >= opens
-            up_indices = np.where(is_up)[0]
-            down_indices = np.where(~is_up)[0]
+            # R292 精确判定：按板块涨/跌停价（与 K 线各路径共用
+            # core/rendering/limit_price.py，替代固定 4.8% 阈值）
+            is_limit_up, is_limit_down = classify_limit_up_down(
+                closes, highs, lows, extract_symbol(data))
+            up_indices = np.where(is_up & ~is_limit_up & ~is_limit_down)[0]
+            down_indices = np.where((~is_up) & ~is_limit_up & ~is_limit_down)[0]
+            limit_up_indices = np.where(is_limit_up)[0]
+            limit_down_indices = np.where(is_limit_down)[0]
 
             def _build_candle_verts(indices_arr):
                 if len(indices_arr) == 0:
@@ -468,8 +302,12 @@ class MatplotlibRenderer(BaseRenderer):
 
             verts_up = _build_candle_verts(up_indices)
             verts_down = _build_candle_verts(down_indices)
+            verts_limit_up = _build_candle_verts(limit_up_indices)
+            verts_limit_down = _build_candle_verts(limit_down_indices)
             segments_up = _build_shadow_segments(up_indices)
             segments_down = _build_shadow_segments(down_indices)
+            segments_limit_up = _build_shadow_segments(limit_up_indices)
+            segments_limit_down = _build_shadow_segments(limit_down_indices)
 
             if ax:
                 if len(verts_up) > 0:
@@ -482,6 +320,16 @@ class MatplotlibRenderer(BaseRenderer):
                         verts_down, facecolor=down_color, edgecolor=down_color, linewidth=1, alpha=alpha)
                     ax.add_collection(collection_down)
 
+                if len(verts_limit_up) > 0:
+                    collection_limit_up = PolyCollection(
+                        verts_limit_up, facecolor='none', edgecolor=limit_up_color, linewidth=1.4, alpha=alpha)
+                    ax.add_collection(collection_limit_up)
+
+                if len(verts_limit_down) > 0:
+                    collection_limit_down = PolyCollection(
+                        verts_limit_down, facecolor='none', edgecolor=limit_down_color, linewidth=1.4, alpha=alpha)
+                    ax.add_collection(collection_limit_down)
+
                 if len(segments_up) > 0:
                     collection_shadow_up = LineCollection(
                         segments_up, colors=up_color, linewidth=1, alpha=alpha)
@@ -491,6 +339,16 @@ class MatplotlibRenderer(BaseRenderer):
                     collection_shadow_down = LineCollection(
                         segments_down, colors=down_color, linewidth=1, alpha=alpha)
                     ax.add_collection(collection_shadow_down)
+
+                if len(segments_limit_up) > 0:
+                    collection_shadow_limit_up = LineCollection(
+                        segments_limit_up, colors=limit_up_color, linewidth=1.2, alpha=alpha)
+                    ax.add_collection(collection_shadow_limit_up)
+
+                if len(segments_limit_down) > 0:
+                    collection_shadow_limit_down = LineCollection(
+                        segments_limit_down, colors=limit_down_color, linewidth=1.2, alpha=alpha)
+                    ax.add_collection(collection_shadow_limit_down)
 
                 if len(data) > 0:
                     ax.autoscale_view()
@@ -542,9 +400,9 @@ class MatplotlibRenderer(BaseRenderer):
                 # 首先尝试使用虚拟滚动渲染器
                 if self._volume_virtual_renderer and self._volume_virtual_renderer.is_enabled:
                     try:
-                        # 设置或更新成交量数据（使用优化后的数据）
-                        if self._volume_virtual_renderer.volume_data is None:
-                            self._volume_virtual_renderer.set_volume_data(optimized_data, ax)
+                        # R292 bug 修复：每次渲染前无条件刷新数据源（原逻辑仅首次设置，
+                        # 切周期/刷行情后 volume_data 停留在旧数据，成交量显示过期值）
+                        self._volume_virtual_renderer.set_volume_data(optimized_data, ax)
                         
                         # 使用虚拟滚动渲染（使用优化后的数据）
                         success = self._volume_virtual_renderer.render_volume_with_virtual_scroll(
@@ -572,7 +430,13 @@ class MatplotlibRenderer(BaseRenderer):
                 if style is None:
                     style = {}
 
-                color = style.get('color', '#1f77b4')
+                # R292 四色：涨红/跌绿/涨停橙/跌停紫，判定与 K 线一致
+                # （volume_* 专属键优先，回退到 K 线同款 up/down 键；color 旧键仍兼容）
+                up_color = style.get('volume_up_color') or style.get('up_color', '#ff0000')
+                down_color = style.get('volume_down_color') or style.get('down_color', '#00ff00')
+                limit_up_color = style.get('limit_up_color', '#FF9800')
+                limit_down_color = style.get('limit_down_color', '#AB47BC')
+                color = style.get('color', up_color)
                 alpha = style.get('alpha', 0.7)
                 edge_color = style.get('edge_color', '#000000')
                 edge_width = style.get('edge_width', 0.5)
@@ -598,6 +462,23 @@ class MatplotlibRenderer(BaseRenderer):
                     verts[:, 3, 0] = x_vals_nz + half_w
                     verts[:, 3, 1] = 0
 
+                    # 四色分类（数据含 open/close 列时生效，判定与 K 线一致）
+                    categories = None
+                    if 'open' in optimized_data.columns and 'close' in optimized_data.columns:
+                        closes = optimized_data['close'].values.astype(np.float64)
+                        opens = optimized_data['open'].values.astype(np.float64)
+                        is_up = closes >= opens
+                        categories = np.where(is_up[nonzero_indices], 1, 0).astype(np.int8)
+                        if 'high' in optimized_data.columns and 'low' in optimized_data.columns:
+                            is_limit_up, is_limit_down = classify_limit_up_down(
+                                closes, optimized_data['high'].values.astype(np.float64),
+                                optimized_data['low'].values.astype(np.float64),
+                                extract_symbol(optimized_data))
+                            # 优先级：涨停 → limit_up_color、跌停 → limit_down_color，与 K 线一致
+                            categories = np.where(
+                                is_limit_down[nonzero_indices], 3,
+                                np.where(is_limit_up[nonzero_indices], 2, categories))
+
                     if callable(color):
                         max_vol = vol_nz.max() if len(vol_nz) > 0 else 1
                         if max_vol == 0:
@@ -606,6 +487,12 @@ class MatplotlibRenderer(BaseRenderer):
                         colors_arr = [color(v) for v in normalized]
                         collection = PolyCollection(
                             verts, facecolors=colors_arr, edgecolors=edge_color,
+                            linewidths=edge_width, alpha=alpha)
+                    elif categories is not None:
+                        # 四色：0=跌绿 1=涨红 2=涨停橙 3=跌停紫
+                        color_map = np.array([down_color, up_color, limit_up_color, limit_down_color])
+                        collection = PolyCollection(
+                            verts, facecolors=color_map[categories].tolist(), edgecolors=edge_color,
                             linewidths=edge_width, alpha=alpha)
                     else:
                         collection = PolyCollection(
@@ -625,7 +512,7 @@ class MatplotlibRenderer(BaseRenderer):
             logger.error(f"Matplotlib成交量渲染失败: {e}")
             return False
 
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None) -> bool:
+    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
         """渲染线图"""
         if not self._initialized:
             return False
@@ -671,10 +558,9 @@ class FallbackRenderer:
         self._create_renderers()
 
     def _create_renderers(self):
-        """创建所有渲染器实例（WebGPU渲染器由WebGPUManager单独管理，避免重复创建）"""
+        """创建所有渲染器实例（WebGPU渲染器由WebGPUManager单独管理，避免重复创建）
+        已清理 OpenGL/Canvas2D stub 假成功渲染器，仅保留真实 Matplotlib 兜底"""
         self._renderers = {
-            RenderBackend.OPENGL: OpenGLRenderer(),
-            RenderBackend.CANVAS2D: Canvas2DRenderer(),
             RenderBackend.MATPLOTLIB: MatplotlibRenderer()
         }
 
@@ -738,15 +624,8 @@ class FallbackRenderer:
             recommended = compatibility_report.recommended_backend
 
         if recommended == GPUSupportLevel.WEBGPU:
-            return [RenderBackend.WEBGPU, RenderBackend.OPENGL,
-                    RenderBackend.CANVAS2D, RenderBackend.MATPLOTLIB]
-        elif recommended == GPUSupportLevel.WEBGL:
-            return [RenderBackend.CANVAS2D, RenderBackend.OPENGL,
-                    RenderBackend.MATPLOTLIB]
-        elif recommended == GPUSupportLevel.NATIVE:
-            return [RenderBackend.OPENGL, RenderBackend.CANVAS2D,
-                    RenderBackend.MATPLOTLIB]
-        else:  # BASIC
+            return [RenderBackend.WEBGPU, RenderBackend.MATPLOTLIB]
+        else:  # WEBGL / NATIVE / BASIC 均走 Matplotlib 兜底
             return [RenderBackend.MATPLOTLIB]
 
     def render_candlesticks(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
@@ -757,9 +636,9 @@ class FallbackRenderer:
         """渲染成交量"""
         return self._render_with_fallback('render_volume', ax, data, style, x, use_datetime_axis)
 
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None) -> bool:
+    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
         """渲染线图"""
-        return self._render_with_fallback('render_line', ax, data, style)
+        return self._render_with_fallback('render_line', ax, data, style, x, use_datetime_axis)
 
     def _render_with_fallback(self, method_name: str, *args, **kwargs) -> bool:
         """带降级的渲染"""

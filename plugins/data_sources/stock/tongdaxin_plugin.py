@@ -921,11 +921,27 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
         """
         try:
             # 转换频率参数
+            # R292 修复：period_map 补充 '1min'，此前 get_kdata(freq='1min') 因缺键
+            # 静默降级为日线，与 get_kline_data(period='1min')（分钟数据）行为不一致。
+            # R292 追加：补齐 Period.to_frequency 输出全集的反向键（'weekly'/'monthly'/
+            # 'daily'/'5min'/'15min'/'30min'/'60min'），未命中频率由静默默认日线改为
+            # logger.warning 提示，避免查询静默降级难排查。
             period_map = {
-                "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min",
-                "60m": "60min", "D": "daily", "W": "weekly", "M": "monthly"
+                "1m": "1min", "1min": "1min", "5m": "5min", "15m": "15min", "30m": "30min",
+                "60m": "60min", "1H": "60min", "1h": "60min",
+                # R292 修复：补充 DuckDB 频率格式键（1d/1w/1M），
+                # 此前 get_kdata(freq='1M') 缺键静默降级为日线，与 get_kline_data 月线行为不一致。
+                "D": "daily", "1d": "daily",
+                "W": "weekly", "1w": "weekly",
+                "M": "monthly", "1M": "monthly",
+                # R292 修复：Period.to_frequency 输出全集反向键
+                "daily": "daily", "weekly": "weekly", "monthly": "monthly",
+                "5min": "5min", "15min": "15min", "30min": "30min", "60min": "60min",
             }
-            period = period_map.get(freq, "daily")
+            period = period_map.get(freq)
+            if period is None:
+                self.logger.warning(f"无法识别的K线频率: {freq!r}，回退为日线（请检查调用方频率参数）")
+                period = "daily"
 
             # 调用现有的get_kline_data方法
             return self.get_kline_data(

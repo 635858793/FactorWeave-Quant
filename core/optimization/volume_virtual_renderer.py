@@ -50,6 +50,8 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
     def set_data_source(self, data: Union[np.ndarray, pd.DataFrame, pd.Series]):
         """设置数据源，实现IVirtualRenderer接口"""
         self.volume_data = data
+        # 数据源更新后清掉旧数据渲染的块记录，避免切周期/刷行情后渲染过期数据
+        self.rendered_chunks.clear()
 
         if isinstance(data, pd.DataFrame) and len(data) > 0:
             self._total_data_points = len(data)
@@ -78,7 +80,43 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
         """兼容旧接口，设置成交量数据和轴"""
         self.volume_data = volume_data
         self.volume_axis = volume_axis
+        self.rendered_chunks.clear()
         self.set_data_source(volume_data)
+
+    def _resolve_volume_colors(self, style) -> Tuple[str, str, str, str]:
+        """解析成交量四色：volume_* 专属键优先，未设置回退 K 线同款 up/down 键。
+
+        Returns:
+            (up_color, down_color, limit_up_color, limit_down_color)
+        """
+        up_color = getattr(style, 'volume_up_color', None) or getattr(style, 'up_color', '#ff0000')
+        down_color = getattr(style, 'volume_down_color', None) or getattr(style, 'down_color', '#00ff00')
+        limit_up_color = getattr(style, 'limit_up_color', '#FF9800')
+        limit_down_color = getattr(style, 'limit_down_color', '#AB47BC')
+        return up_color, down_color, limit_up_color, limit_down_color
+
+    def _classify_volume_colors(self, data) -> Optional[np.ndarray]:
+        """按涨跌/涨跌停分类成交量柱子颜色类别（与 K 线四色判定一致）。
+
+        类别编码：0=跌绿 1=涨红 2=涨停橙 3=跌停紫。
+        数据非 DataFrame 或缺 open/close 列时返回 None（调用方降级单色/两色，不报错）。
+        """
+        if data is None or not hasattr(data, 'columns') or len(data) == 0:
+            return None
+        if 'open' not in data.columns or 'close' not in data.columns:
+            return None
+        closes = data['close'].values.astype(np.float64)
+        opens = data['open'].values.astype(np.float64)
+        categories = np.where(closes >= opens, 1, 0).astype(np.int8)
+        if 'high' in data.columns and 'low' in data.columns:
+            from core.rendering.limit_price import classify_limit_up_down, extract_symbol
+            highs = data['high'].values.astype(np.float64)
+            lows = data['low'].values.astype(np.float64)
+            is_limit_up, is_limit_down = classify_limit_up_down(
+                closes, highs, lows, extract_symbol(data))
+            # 优先级：涨停 → limit_up_color、跌停 → limit_down_color，与 K 线一致
+            categories = np.where(is_limit_down, 3, np.where(is_limit_up, 2, categories))
+        return categories
 
     def render_with_virtual_scroll(self, ax, data: pd.DataFrame,
                                         style: Dict[str, Any] = None,
@@ -119,8 +157,15 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
                 # 创建柱子顶点
                 verts = []
                 colors = []
-                
-                for x_val, volume in zip(x_values, volumes):
+
+                # R292 四色：涨红/跌绿/涨停橙/跌停紫（数据含 open/close 时生效，判定与 K 线一致）
+                up_color, down_color, limit_up_color, limit_down_color = \
+                    self._resolve_volume_colors(current_style)
+                # 类别编码 0=跌 1=涨 2=涨停 3=跌停（与 _classify_volume_colors / _render_chunk 一致）
+                category_colors = (down_color, up_color, limit_up_color, limit_down_color)
+                categories = self._classify_volume_colors(data)
+
+                for i, (x_val, volume) in enumerate(zip(x_values, volumes)):
                     if volume > current_style.min_visible_value:
                         left = x_val - current_style.width / 2
                         right = x_val + current_style.width / 2
@@ -129,8 +174,10 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
                             (left, 0), (left, volume), (right, volume), (right, 0)
                         ])
                         
-                        # 处理颜色
-                        if callable(current_style.color):
+                        # 处理颜色：有 open/close 列 → 四色；否则保持原 callable/单色逻辑
+                        if categories is not None and not callable(current_style.color):
+                            colors.append(category_colors[int(categories[i])])
+                        elif callable(current_style.color):
                             normalized_volume = volume / max(volumes) if max(volumes) > 0 else 0
                             colors.append(current_style.color(normalized_volume))
                         else:
@@ -220,8 +267,8 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
             logger.error(f"虚拟滚动成交量渲染失败: {e}")
             return False
     
-    def _get_chunk_data(self, chunk_id: int) -> Optional[np.ndarray]:
-        """获取指定块的成交量数据"""
+    def _get_chunk_data(self, chunk_id: int) -> Optional[Union[np.ndarray, pd.DataFrame]]:
+        """获取指定块的数据（DataFrame 时保留 open/close 等列供四色判定）"""
         if self.volume_data is None:
             return None
         
@@ -232,14 +279,26 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
         if start_idx >= end_idx:
             return None
         
-        chunk_data = self.volume_data.iloc[start_idx:end_idx]['volume'].values
+        # 切片 DataFrame 子集（含 volume 及 open/close/high/low/symbol 列），
+        # 供 _render_chunk 做四色分类；无 open/close 列时等价旧行为（仅 volume）
+        if isinstance(self.volume_data, pd.DataFrame):
+            chunk_data = self.volume_data.iloc[start_idx:end_idx]
+            if 'volume' in chunk_data.columns:
+                volume_col = chunk_data['volume'].values.astype(np.float64)
+            else:
+                volume_col = chunk_data.iloc[:, 0].values.astype(np.float64)
+        else:
+            chunk_data = np.asarray(self.volume_data[start_idx:end_idx], dtype=np.float64)
+            volume_col = chunk_data
+        
+        max_vol = float(volume_col.max()) if len(volume_col) > 0 else 0.0
         
         # 创建RenderChunk并添加到缓存
         chunk = RenderChunk(
             start_index=start_idx,
             end_index=end_idx,
             data_points=chunk_data,
-            bounding_rect=QRectF(start_idx, 0, len(chunk_data), max(chunk_data) if len(chunk_data) > 0 else 0),
+            bounding_rect=QRectF(start_idx, 0, len(volume_col), max_vol),
             render_time=0.0,
             quality_level=self.virtual_renderer.quality_level
         )
@@ -248,14 +307,14 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
         
         return chunk_data
     
-    def _render_chunk(self, ax, chunk_data: np.ndarray, 
+    def _render_chunk(self, ax, chunk_data, 
                      style: VirtualRenderStyle, chunk_id: int, 
                      x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
-        """渲染单个数据块"""
+        """渲染单个数据块（兼容 DataFrame 切片与 ndarray 两种 chunk 数据）"""
         try:
             from matplotlib.collections import PolyCollection
             
-            if len(chunk_data) == 0:
+            if chunk_data is None or len(chunk_data) == 0:
                 logger.debug(f"跳过空数据块渲染: {chunk_id}")
                 return False
             
@@ -265,18 +324,34 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
             chunk_size = self.config.chunk_size
             base_index = chunk_id * chunk_size
             
+            # 提取成交量列：DataFrame 优先取 volume 列，ndarray 即成交量数组
+            if isinstance(chunk_data, pd.DataFrame):
+                if 'volume' in chunk_data.columns:
+                    volumes = chunk_data['volume'].values.astype(np.float64)
+                else:
+                    volumes = chunk_data.iloc[:, 0].values.astype(np.float64)
+            else:
+                volumes = np.asarray(chunk_data, dtype=np.float64)
+            
             # 准备X轴数据
-            if x is not None and len(x) > base_index + len(chunk_data):
+            if x is not None and len(x) > base_index + len(volumes):
                 # 使用提供的X轴数据
-                chunk_x = x[base_index:base_index + len(chunk_data)]
+                chunk_x = x[base_index:base_index + len(volumes)]
             else:
                 # 使用默认的X轴数据
-                chunk_x = np.arange(base_index, base_index + len(chunk_data))
+                chunk_x = np.arange(base_index, base_index + len(volumes))
             
             verts = []
             colors = []
             
-            for i, (x_val, volume) in enumerate(zip(chunk_x, chunk_data)):
+            # R292 四色：涨红/跌绿/涨停橙/跌停紫（chunk 带 open/close 列时生效）
+            up_color, down_color, limit_up_color, limit_down_color = \
+                self._resolve_volume_colors(style)
+            # 索引与 _classify_volume_colors 类别编码一致：0=跌 1=涨 2=涨停 3=跌停
+            category_colors = (down_color, up_color, limit_up_color, limit_down_color)
+            categories = self._classify_volume_colors(chunk_data)
+            
+            for i, (x_val, volume) in enumerate(zip(chunk_x, volumes)):
                 if volume > style.min_visible_value:
                     left = x_val - style.width / 2
                     right = x_val + style.width / 2
@@ -285,9 +360,11 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
                         (left, 0), (left, volume), (right, volume), (right, 0)
                     ])
                     
-                    # 处理颜色
-                    if callable(style.color):
-                        normalized_volume = normalize_value(volume, max(chunk_data))
+                    # 处理颜色：有 open/close 列 → 四色；否则保持原 callable/单色逻辑
+                    if categories is not None and not callable(style.color):
+                        colors.append(category_colors[int(categories[i])])
+                    elif callable(style.color):
+                        normalized_volume = normalize_value(volume, max(volumes))
                         colors.append(style.color(normalized_volume))
                     else:
                         colors.append(style.color)
@@ -305,16 +382,16 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
                 
                 # 调试模式下显示块边界
                 if style.show_chunks:
-                    self._draw_chunk_boundary(ax, base_index, len(chunk_data), 
+                    self._draw_chunk_boundary(ax, base_index, len(volumes), 
                                             style.chunk_border_color, 
                                             style.chunk_border_width)
                 
                 render_time = (time.time() - render_start) * 1000
-                logger.debug(f"块渲染完成: ID={chunk_id}, 数据点={len(chunk_data)}, 柱子数={len(verts)}, 耗时={render_time:.2f}ms")
+                logger.debug(f"块渲染完成: ID={chunk_id}, 数据点={len(volumes)}, 柱子数={len(verts)}, 耗时={render_time:.2f}ms")
                 
                 return True
             
-            logger.debug(f"块渲染无可见元素: ID={chunk_id}, 数据点={len(chunk_data)}")
+            logger.debug(f"块渲染无可见元素: ID={chunk_id}, 数据点={len(volumes)}")
             return False
             
         except Exception as e:

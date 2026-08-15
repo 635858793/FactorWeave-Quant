@@ -127,7 +127,14 @@ class IndicatorParamWidget(QWidget):
             elif isinstance(widget, QLineEdit):
                 params[param_name] = widget.text()
             elif isinstance(widget, QComboBox):
-                params[param_name] = widget.currentText()
+                # R245: matype 类参数转换为 TA-Lib int 索引（与 technical_tab get_current_params 一致）
+                value = widget.currentText()
+                if 'matype' in param_name.lower():
+                    ma_type_map = {"SMA": 0, "EMA": 1, "WMA": 2, "DEMA": 3,
+                                   "TEMA": 4, "TRIMA": 5, "KAMA": 6, "MAMA": 7, "T3": 8}
+                    params[param_name] = ma_type_map.get(value, 0)
+                else:
+                    params[param_name] = value
         return params
 
     def set_params(self, params: Dict[str, Any]):
@@ -233,56 +240,60 @@ class IndicatorParamsDialog(BaseDialog):
 
 
     def _load_indicator_configs(self):
-        """加载指标配置"""
-        # 内置指标配置
-        indicator_configs = {
-            'MA': {
-                'period': {'type': 'int', 'default': 20, 'min': 1, 'max': 200, 'label': '周期'},
-                'type': {'type': 'choice', 'default': 'SMA', 'choices': ['SMA', 'EMA', 'WMA'], 'label': '类型'}
-            },
-            'MACD': {
-                'fast_period': {'type': 'int', 'default': 12, 'min': 1, 'max': 50, 'label': '快线周期'},
-                'slow_period': {'type': 'int', 'default': 26, 'min': 1, 'max': 100, 'label': '慢线周期'},
-                'signal_period': {'type': 'int', 'default': 9, 'min': 1, 'max': 50, 'label': '信号线周期'}
-            },
-            'RSI': {
-                'period': {'type': 'int', 'default': 14, 'min': 1, 'max': 100, 'label': '周期'},
-                'overbought': {'type': 'float', 'default': 70.0, 'min': 50.0, 'max': 90.0, 'label': '超买线'},
-                'oversold': {'type': 'float', 'default': 30.0, 'min': 10.0, 'max': 50.0, 'label': '超卖线'}
-            },
-            'BOLL': {
-                'period': {'type': 'int', 'default': 20, 'min': 1, 'max': 100, 'label': '周期'},
-                'std_dev': {'type': 'float', 'default': 2.0, 'min': 0.5, 'max': 5.0, 'label': '标准差倍数'}
-            },
-            'KDJ': {
-                'k_period': {'type': 'int', 'default': 9, 'min': 1, 'max': 50, 'label': 'K值周期'},
-                'd_period': {'type': 'int', 'default': 3, 'min': 1, 'max': 20, 'label': 'D值周期'},
-                'j_period': {'type': 'int', 'default': 3, 'min': 1, 'max': 20, 'label': 'J值周期'}
-            },
-            'CCI': {
-                'period': {'type': 'int', 'default': 14, 'min': 1, 'max': 100, 'label': '周期'},
-                'constant': {'type': 'float', 'default': 0.015, 'min': 0.001, 'max': 0.1, 'label': '常数'}
-            },
-            'WR': {
-                'period': {'type': 'int', 'default': 14, 'min': 1, 'max': 100, 'label': '周期'}
-            },
-            'ATR': {
-                'period': {'type': 'int', 'default': 14, 'min': 1, 'max': 100, 'label': '周期'}
-            },
-            'OBV': {
-                'smooth': {'type': 'bool', 'default': False, 'label': '平滑处理'}
-            },
-            'SAR': {
-                'step': {'type': 'float', 'default': 0.02, 'min': 0.001, 'max': 0.1, 'label': '步长'},
-                'max_step': {'type': 'float', 'default': 0.2, 'min': 0.1, 'max': 1.0, 'label': '最大步长'}
-            }
-        }
+        """加载指标配置 - R245: 动态读取统一参数注册表（TA-Lib 参数名），
+        替代原硬编码 period/fast_period 等错误命名（与 technical_tab 共用 get_indicator_params_config）
+        R282: 无参数配置指标（如 OBV/AD/BOP）不再跳过，创建"无参数"占位 tab，
+        保证对话框覆盖全部选中指标（含 KAMA/MAMA/TEMA 等 DB 未种子指标）"""
+        from core.indicator_adapter import get_indicator_params_config, get_indicator_english_name
 
         # 为每个选中的指标创建参数设置页面
         for indicator_name in self.selected_indicators:
-            if indicator_name in indicator_configs:
-                self._create_indicator_tab(
-                    indicator_name, indicator_configs[indicator_name])
+            try:
+                english_name = get_indicator_english_name(indicator_name)
+                config = get_indicator_params_config(english_name)
+                if not config or not config.get('params'):
+                    # R282: 无参数配置 → 占位 tab（"该指标无可配置参数"），不跳过
+                    logger.debug(f"指标 {indicator_name} 无参数配置，创建占位 tab")
+                    self._create_placeholder_tab(indicator_name)
+                    continue
+
+                # 转换为 IndicatorParamWidget 控件格式 {param_name: {type, default, min, max, label, choices}}
+                widget_config = {}
+                for param_name, param_info in config['params'].items():
+                    param_type = param_info.get('type', 'int')
+                    item = {
+                        'type': param_type,
+                        'default': param_info.get('default', 0),
+                        'label': param_info.get('desc', param_name),
+                    }
+                    if param_info.get('min') is not None:
+                        item['min'] = param_info['min']
+                    if param_info.get('max') is not None:
+                        item['max'] = param_info['max']
+                    if param_info.get('choices'):
+                        item['choices'] = param_info['choices']
+                    widget_config[param_name] = item
+
+                self._create_indicator_tab(indicator_name, widget_config)
+            except Exception as e:
+                logger.warning(f"加载指标 {indicator_name} 参数配置失败: {e}")
+                self._create_placeholder_tab(indicator_name)
+
+    def _create_placeholder_tab(self, indicator_name: str):
+        """创建无参数指标占位 tab（R282）"""
+        from PyQt5.QtWidgets import QWidget
+        try:
+            from core.indicator_adapter import get_talib_chinese_name
+            chinese_name = get_talib_chinese_name(indicator_name)
+        except Exception:
+            chinese_name = indicator_name
+        placeholder = QWidget()
+        ph_layout = QVBoxLayout(placeholder)
+        info_label = QLabel(f"「{indicator_name} ({chinese_name})」无可用参数配置\n该指标使用默认参数渲染。")
+        info_label.setAlignment(Qt.AlignCenter)
+        info_label.setStyleSheet("color: #888; font-size: 13px;")
+        ph_layout.addWidget(info_label)
+        self.tab_widget.addTab(placeholder, indicator_name)
 
     def _create_indicator_tab(self, indicator_name: str, config: Dict[str, Any]):
         """创建指标参数设置选项卡"""

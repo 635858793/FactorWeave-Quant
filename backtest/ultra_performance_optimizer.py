@@ -8,6 +8,7 @@ from loguru import logger
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
+import threading
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import mmap
 import os
@@ -718,19 +719,23 @@ class UltraPerformanceOptimizer:
     def cleanup(self):
         """清理资源"""
         try:
-            # 清理Dask客户端
-            if self.dask_client:
-                self.dask_client.close()
+            # 清理Dask客户端（防御式访问：__init__ 中途失败时属性可能未赋值）
+            dask_client = getattr(self, 'dask_client', None)
+            if dask_client:
+                dask_client.close()
                 self.dask_client = None
 
             # 清理Ray
-            if self.ray_initialized:
+            if getattr(self, 'ray_initialized', False):
                 ray.shutdown()
                 self.ray_initialized = False
 
             # 清理缓存
-            with self._cache_lock:
-                self.cache.clear()
+            cache_lock = getattr(self, '_cache_lock', None)
+            cache = getattr(self, 'cache', None)
+            if cache_lock is not None and cache is not None:
+                with cache_lock:
+                    cache.clear()
 
             # 强制垃圾回收
             gc.collect()

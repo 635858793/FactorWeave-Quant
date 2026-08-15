@@ -586,6 +586,7 @@ class TestR9WavePredictionRealData(unittest.TestCase):
 # 保留在 sys.modules 中(删除会导致其他文件重新真实导入而崩溃)。
 # ---------------------------------------------------------------------------
 _POLLUTED_MODULES = [
+    'gui.widgets.analysis_tabs',  # 顶层轻量假包 (R251 收集期注入, 遗留致 analysis_widget 真实导入失败)
     'gui.widgets.analysis_tabs.pattern_tab',
     'gui.widgets.analysis_tabs.pattern_tab_pro',
     'gui.widgets.analysis_tabs.technical_tab',

@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QFrame, QSplitter, QGroupBox, QMessageBox,
     QHeaderView, QSpinBox, QDoubleSpinBox, QCheckBox,
     QProgressBar, QAbstractItemView, QMenu, QAction, QWidget,
-    QListWidget, QListWidgetItem
+    QListWidget, QListWidgetItem, QDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QDate, QTimer, pyqtSlot
 from PyQt5.QtGui import QFont, QColor
@@ -200,9 +200,10 @@ class OrderManagementDialog(BaseDialog):
 
             # 订单表格
             self.order_table = QTableWidget()
-            self.order_table.setColumnCount(11)
+            # R271: 12 列, 新增"拒绝原因"列展示 error_code/error_message (风控熔断拒绝原因 UI 呈现)
+            self.order_table.setColumnCount(12)
             self.order_table.setHorizontalHeaderLabels([
-                "订单ID", "资产类型", "股票代码", "方向", "数量", "价格", "状态", "创建时间", "成交数量", "成交价格", "操作"
+                "订单ID", "资产类型", "股票代码", "方向", "数量", "价格", "状态", "创建时间", "成交数量", "成交价格", "拒绝原因", "操作"
             ])
             self.order_table.setSortingEnabled(True)
             self.order_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -638,6 +639,8 @@ class OrderManagementDialog(BaseDialog):
             self.event_bus.subscribe('order_rejected', self.on_order_rejected_event)
             self.event_bus.subscribe('order_submit_failed', self.on_order_submit_failed_event)
             self.event_bus.subscribe('order_modified', self.on_order_modified_event)
+            # R271: 订阅订单验证失败事件 (覆盖 DAILY_LOSS_LIMIT_EXCEEDED 等订单未创建型拒绝)
+            self.event_bus.subscribe('order_validation_failed', self.on_order_validation_failed_event)
         except Exception as e:
             logger.error(f"订阅事件失败: {e}")
 
@@ -650,6 +653,7 @@ class OrderManagementDialog(BaseDialog):
             self.event_bus.unsubscribe('order_rejected', self.on_order_rejected_event)
             self.event_bus.unsubscribe('order_submit_failed', self.on_order_submit_failed_event)
             self.event_bus.unsubscribe('order_modified', self.on_order_modified_event)
+            self.event_bus.unsubscribe('order_validation_failed', self.on_order_validation_failed_event)
         except Exception as e:
             logger.error(f"取消事件订阅失败: {e}")
         super().closeEvent(event)
@@ -761,13 +765,39 @@ class OrderManagementDialog(BaseDialog):
                 filled_price = f"{order.filled_price:.2f}" if order.filled_price > 0 else "-"
                 self.order_table.setItem(row, 9, QTableWidgetItem(filled_price))
 
+                # 拒绝原因 (R271: error_code + error_message 文本, 风控熔断拒绝原因 UI 呈现)
+                reject_reason = self._format_reject_reason(
+                    getattr(order, 'error_code', None), getattr(order, 'error_message', None))
+                reason_item = QTableWidgetItem(reject_reason)
+                if reject_reason:
+                    reason_item.setForeground(QColor("#e74c3c"))
+                    reason_item.setToolTip(reject_reason)
+                self.order_table.setItem(row, 10, reason_item)
+
                 # 操作按钮
                 btn_widget = QPushButton("操作")
                 btn_widget.clicked.connect(lambda checked, o=order: self.show_order_context_menu(o))
-                self.order_table.setCellWidget(row, 10, btn_widget)
+                self.order_table.setCellWidget(row, 11, btn_widget)
 
         except Exception as e:
             logger.error(f"更新订单表格失败: {e}")
+
+    @staticmethod
+    def _format_reject_reason(error_code, error_message) -> str:
+        """R271: 格式化拒绝原因 (error_code 文案映射 + error_message 截断)"""
+        code_map = {
+            'RISK_HALTED': '风控熔断',
+            'DAILY_LOSS_LIMIT_EXCEEDED': '当日亏损熔断',
+            'RISK_CHECK_FAILED': '风控拒绝',
+        }
+        if error_code:
+            label = code_map.get(error_code, error_code)
+            if error_message:
+                return f"{label}: {error_message[:40]}"
+            return label
+        if error_message:
+            return error_message[:40]
+        return ""
 
     def get_status_text(self, status: OrderStatus) -> str:
         """获取状态文本"""
@@ -1093,6 +1123,8 @@ class OrderManagementDialog(BaseDialog):
             note_text += f"账户ID: {order.account_id}\n"
             if order.tags:
                 note_text += f"标签: {', '.join(order.tags)}\n"
+            if getattr(order, 'error_code', None):
+                note_text += f"错误码: {order.error_code}\n"
             if order.error_message:
                 note_text += f"错误信息: {order.error_message}"
 
@@ -1345,6 +1377,23 @@ class OrderManagementDialog(BaseDialog):
             self.load_orders()
         except Exception as e:
             logger.error(f"处理订单提交失败事件失败: {e}")
+
+    @pyqtSlot(object)
+    def on_order_validation_failed_event(self, event):
+        """订单验证失败事件 (R271: 覆盖订单未创建型拒绝, 如 DAILY_LOSS_LIMIT_EXCEEDED)
+
+        订单因风控验证失败未创建 (无法从订单列表展示), 此处直接在状态栏呈现拒绝原因。
+        """
+        try:
+            stock_code = getattr(event, 'stock_code', '')
+            error = getattr(event, 'error', '')
+            error_code = getattr(event, 'error_code', '')
+            reason = self._format_reject_reason(error_code, error)
+            if reason:
+                self.status_label.setText(f"订单验证失败: {stock_code} - {reason}")
+                logger.warning(f"订单验证失败 (UI 呈现): {stock_code} - {reason}")
+        except Exception as e:
+            logger.error(f"处理订单验证失败事件失败: {e}")
 
     @pyqtSlot(object)
     def on_order_modified_event(self, event):

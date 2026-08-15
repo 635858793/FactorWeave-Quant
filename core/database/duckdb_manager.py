@@ -656,6 +656,42 @@ class DuckDBConnectionManager:
         except Exception as e:
             logger.error(f"加载配置文件失败: {e}")
 
+    def apply_default_config(self, config: DuckDBConfig) -> bool:
+        """R288：应用默认 DuckDB 配置到管理器（GUI 配置真正生效入口）
+
+        更新 _default_config 并重建所有已存在的连接池，使后续业务连接
+        （get_pool/get_connection 的 config=None 分支）均使用新配置。
+
+        背景：GUI 原先经 DuckDBPerformanceOptimizer 在自建独立连接上 SET 参数，
+        与业务连接池完全脱节（"配置假生效"）；本方法是替代该路径的最小接入点——
+        DuckDBConnectionPool._apply_config 本就会对每个池连接 SET 配置，只需把
+        用户配置注入到这里。
+
+        Args:
+            config: manager 版 DuckDBConfig（memory_limit/threads 等）
+
+        Returns:
+            是否应用成功
+        """
+        try:
+            with self._lock:
+                self._default_config = config
+                # 重建已存在的池，让新配置立即生效
+                for db_path in list(self._pools.keys()):
+                    try:
+                        self._pools[db_path].close_all_connections()
+                        del self._pools[db_path]
+                        logger.info(f"应用新配置，已移除旧连接池: {db_path}")
+                    except Exception as e:
+                        logger.error(f"移除旧连接池失败 {db_path}: {e}")
+            logger.info(
+                f"DuckDB 默认配置已应用: memory_limit={config.memory_limit}, "
+                f"threads={config.threads}, compression={config.compression}")
+            return True
+        except Exception as e:
+            logger.error(f"应用 DuckDB 默认配置失败: {e}")
+            return False
+
     def get_pool(self, database_path: str, pool_size: int = 10,
                  config: Optional[DuckDBConfig] = None) -> DuckDBConnectionPool:
         """
@@ -690,14 +726,16 @@ class DuckDBConnectionManager:
             return self._pools[database_path]
 
     @contextmanager
-    def get_connection(self, database_path: str, pool_size: int = 15,
+    def get_connection(self, database_path: str, pool_size: int = 10,
                        config: Optional[DuckDBConfig] = None):
         """
         获取数据库连接
 
         Args:
             database_path: 数据库文件路径
-            pool_size: 连接池大小（默认15，从10增加到15，支持批量查询）
+            pool_size: 连接池大小 (R292-HVD-B: 15→10, 与 get_pool 默认 10、
+                      AssetDatabaseConfig.pool_size 默认 10 对齐; 池由首个调用者
+                      定容且池满有临时连接逃生通道, 真实并发同库 ≤2-4, 收敛无影响)
             config: DuckDB配置
         """
         pool = self.get_pool(database_path, pool_size, config)
@@ -761,14 +799,14 @@ class DuckDBConnectionManager:
                 except Exception as e:
                     logger.error(f"移除连接池失败 {database_path}: {e}")
 
-    def restart_pool(self, database_path: str, pool_size: int = 15,
+    def restart_pool(self, database_path: str, pool_size: int = 10,
                     config: Optional[DuckDBConfig] = None) -> bool:
         """
         重启数据库连接池（用于DuckDB进入受限模式时）
 
         Args:
             database_path: 数据库文件路径
-            pool_size: 连接池大小
+            pool_size: 连接池大小 (R292-HVD-B: 15→10 与全局默认对齐)
             config: DuckDB配置
 
         Returns:
@@ -807,6 +845,60 @@ class DuckDBConnectionManager:
             logger.error(f"❌ 重启数据库连接池失败 {database_path}: {e}")
             return False
 
+    def rebuild_all_pools(self, pool_size: int = 10,
+                          config: Optional[DuckDBConfig] = None) -> bool:
+        """重建所有连接池为新容量（HVD-E: update_pool_size 运行时立即生效）
+
+        逐池 close_all_connections + 删除 + 按 pool_size 重建。整体持 _lock
+        （RLock 可重入），池满连接有临时逃生通道（本类 get_connection 30s 超时
+        分支），重建中断窗口内业务连接短暂排队、不会断连。
+
+        教训: apply_default_config (L659) 重建时不传 pool_size → 新池落回
+        DuckDBConnectionPool.__init__ 默认 50 (L73), 用户配置静默失效。
+        本方法必须显式传 pool_size。重建失败的单池按"缺池自愈"处理——
+        get_pool (L712) 下次调用会自动按新容量补建。
+
+        Args:
+            pool_size: 新连接池大小 (范围 5-100, 由调用方 update_pool_size 校验)
+            config: DuckDBConfig, 缺省沿用 _default_config
+
+        Returns:
+            是否全部成功（单池失败不影响其余池）
+        """
+        try:
+            pool_config = config or self._default_config
+            db_paths = list(self._pools.keys())
+            success = True
+
+            with self._lock:
+                for db_path in db_paths:
+                    try:
+                        self._pools[db_path].close_all_connections()
+                        del self._pools[db_path]
+                    except Exception as e:
+                        logger.error(f"重建前关闭旧连接池失败 {db_path}（下次 get_pool 自愈）: {e}")
+                        success = False
+                        continue
+
+                    try:
+                        pool = DuckDBConnectionPool(
+                            database_path=db_path,
+                            pool_size=pool_size,
+                            config=pool_config,
+                        )
+                        self._pools[db_path] = pool
+                        logger.info(f"连接池已按新容量重建: {db_path} (pool_size={pool_size})")
+                    except Exception as e:
+                        logger.error(f"重建连接池失败 {db_path}（缺池自愈兜底）: {e}")
+                        success = False
+
+            logger.info(f"全部连接池重建完成: pool_size={pool_size}, 池数={len(self._pools)}")
+            return success
+
+        except Exception as e:
+            logger.error(f"重建全部连接池失败: {e}")
+            return False
+
 
 # 全局连接管理器实例
 _connection_manager: Optional[DuckDBConnectionManager] = None
@@ -825,12 +917,21 @@ def get_connection_manager(config_file: Optional[str] = None) -> DuckDBConnectio
 
 
 def initialize_duckdb_manager(config_file: Optional[str] = None) -> DuckDBConnectionManager:
-    """初始化DuckDB连接管理器"""
+    """初始化DuckDB连接管理器 (R292-HVD-A: 幂等化)
+
+    原实现在单例已存在时 close_all_pools + 替换 _connection_manager 引用,
+    而 SectorDataService 懒加载 (sector_data_service.py:87) 在生产路径触发本函数,
+    重建后已缓存单例引用的组件 (AssetSeparatedDatabaseManager, 现收敛为
+    get_connection_manager() 单例) 会持有被关池的旧实例 → 运行时双实例双池。
+    改为幂等复用: 单例已存在时直接返回, 强制重建需求可走
+    apply_default_config (L659) / restart_pool (L799), 与 R288/R289 配置注入
+    (settings_dialog.py:679 / service_bootstrap.py:320) 全部作用于同一单例。
+    """
     global _connection_manager
 
     with _manager_lock:
         if _connection_manager is not None:
-            _connection_manager.close_all_pools()
+            return _connection_manager
 
         _connection_manager = DuckDBConnectionManager(config_file)
         logger.info("DuckDB连接管理器已初始化")

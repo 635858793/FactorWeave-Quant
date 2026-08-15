@@ -1406,10 +1406,24 @@ class UniPluginDataManager:
             if data_type == DataType.HISTORICAL_KLINE:
                 # 时间列统一为timestamp（DuckDB K线表结构）
                 if 'timestamp' not in persist_df.columns:
+                    # R275: 兼容插件返回的 datetime 索引（东财/baostock 均 set_index('datetime')）
+                    if 'datetime' not in persist_df.columns and 'date' not in persist_df.columns:
+                        if isinstance(persist_df.index, pd.DatetimeIndex) or persist_df.index.name in ('datetime', 'date'):
+                            persist_df = persist_df.reset_index()
+                            # R292 修复：无命名 DatetimeIndex reset_index 后新列为 'index'，
+                            # 统一改名为 datetime（与 unified_data_manager._persist_kdata_to_duckdb 一致），
+                            # 否则 timestamp 列无法构建 → 违反 NOT NULL 约束落库失败。
+                            if 'index' in persist_df.columns and 'datetime' not in persist_df.columns:
+                                persist_df = persist_df.rename(columns={'index': 'datetime'})
+                    # R290: 新增 timestamp 后删除 datetime/date 列，避免与
+                    # asset_database_manager._filter_dataframe_columns 的 datetime→timestamp
+                    # 映射叠加产生重复列 → DuckDB "Duplicate column name timestamp" 报错。
                     if 'datetime' in persist_df.columns:
                         persist_df['timestamp'] = pd.to_datetime(persist_df['datetime'])
+                        persist_df = persist_df.drop(columns=['datetime'])
                     elif 'date' in persist_df.columns:
                         persist_df['timestamp'] = pd.to_datetime(persist_df['date'])
+                        persist_df = persist_df.drop(columns=['date'])
                 # 补齐关键列，保证落库后可按symbol/frequency查询
                 if 'symbol' not in persist_df.columns:
                     persist_df['symbol'] = getattr(context, 'symbol', None) or ''

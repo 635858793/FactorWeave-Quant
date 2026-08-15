@@ -39,7 +39,6 @@ import joblib
 from core.database.unified_sqlite_access import UnifiedSQLiteAccess
 
 try:
-    from core.risk_control import RiskMonitor
     from core.risk_alert import RiskAlertSystem
     from core.services.ai_prediction_service import AIPredictionService, PredictionType
     from core.services.enhanced_performance_bridge import EnhancedPerformanceBridge
@@ -131,7 +130,6 @@ class EnhancedRiskMonitor:
         self.config = config or {}
 
         # 基础组件
-        self.risk_monitor = RiskMonitor() if CORE_AVAILABLE else None
         self.alert_system = RiskAlertSystem() if CORE_AVAILABLE else None
         try:
             if CORE_AVAILABLE:
@@ -335,34 +333,9 @@ class EnhancedRiskMonitor:
         try:
             base_metrics = {}
 
-            if self.risk_monitor:
-                try:
-                    raw_risk_data = self.risk_monitor.get_risk_metrics()
-                    if raw_risk_data:
-                        base_metrics = {
-                            'market_risk': {
-                                'volatility': raw_risk_data.get('volatility', 0),
-                                'beta': raw_risk_data.get('beta', 0),
-                                'var_95': raw_risk_data.get('var_95', 0),
-                                'es_95': raw_risk_data.get('es_95', 0)
-                            },
-                            'liquidity_risk': {
-                                'bid_ask_spread': raw_risk_data.get('bid_ask_spread', 0),
-                                'turnover_ratio': raw_risk_data.get('turnover_ratio', 0),
-                                'market_impact': raw_risk_data.get('market_impact', 0)
-                            },
-                            'concentration_risk': {
-                                'herfindahl_index': raw_risk_data.get('herfindahl_index', 0),
-                                'max_position_weight': raw_risk_data.get('max_position_weight', 0),
-                                'sector_concentration': raw_risk_data.get('sector_concentration', 0)
-                            }
-                        }
-                    else:
-                        logger.warning("risk_monitor.get_risk_metrics() 返回空数据，风险指标不可用")
-                except Exception as rm_error:
-                    logger.warning(f"从risk_monitor获取风险指标失败: {rm_error}")
-            else:
-                logger.warning("risk_monitor未初始化，无法获取真实风险指标")
+            # R268-F3: RiskMonitor.get_risk_metrics 死桥接已删除 (risk_control.py 原实现:
+            # 恒 ImportError → 全 0 兜底, 且 _position_records 无任何数据源)。
+            # 增强监控指标由下方 system_metrics + analyzed_metrics 构成。
 
             system_metrics = {}
             try:

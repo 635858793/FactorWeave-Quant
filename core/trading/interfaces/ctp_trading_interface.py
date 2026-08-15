@@ -538,14 +538,23 @@ class CTPTradingInterface(TradingInterface):
             account_data = self.get_account()
             if not account_data:
                 return None
+            # R273-F2: 原传 available_cash/frozen_cash/total_profit_loss/today_profit_loss
+            # 等 FundInfo 不存在的字段 → 必抛 TypeError 被下方 except 吞掉返回 None。
+            # 现按 FundInfo 真实字段 (account_models.py:452-466) 映射。
+            total_assets = account_data.get('balance', 0)
+            available = account_data.get('available', 0)
             return FundInfo(
                 account_id=account_id,
-                total_assets=account_data.get('balance', 0),
-                available_cash=account_data.get('available', 0),
+                total_balance=total_assets,
+                available_balance=available,
+                frozen_balance=account_data.get('frozen_cash', 0),
                 market_value=0.0,
-                frozen_cash=account_data.get('frozen_cash', 0),
-                total_profit_loss=0.0,
-                today_profit_loss=0.0,
+                total_assets=total_assets,
+                profit_loss=0.0,
+                profit_loss_ratio=0.0,
+                margin_used=0.0,
+                margin_available=available,
+                maintenance_margin=0.0,
                 update_time=datetime.now()
             )
         except Exception as e:

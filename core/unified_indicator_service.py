@@ -43,6 +43,182 @@ except ImportError:
     TALIB_AVAILABLE = False
     logger.warning("TA-Lib 未安装或无法导入，将使用自定义实现")
 
+# TA-Lib 直算兜底的输出列名映射（数据库无指标记录时仍可计算常用技术指标）
+# R263 系统性修复：与 core/indicators/indicators_algorithm.py get_talib_real_indicator_list()
+# 的 UI 列表对齐 —— 此前仅 24 键，UI 列表 46 个指标中约 22 个"能选不能算"
+# （calculate_indicator L1282 报"指标或形态 X 不存在"），现按 TA-Lib 标准签名补齐。
+# 输入列映射见 _prepare_talib_inputs；indicator_adapter.py L825-842 有同源映射可对照。
+TALIB_OUTPUT_MAP = {
+    # Overlap Studies
+    'MA': ['MA'],
+    'SMA': ['MA'],
+    'EMA': ['EMA'],
+    'WMA': ['WMA'],
+    'TRIMA': ['TRIMA'],
+    'KAMA': ['KAMA'],
+    'MAMA': ['MAMA', 'MAMAFix'],
+    'T3': ['T3'],
+    'DEMA': ['DEMA'],
+    'TEMA': ['TEMA'],
+    'HT_TRENDLINE': ['HT_TRENDLINE'],
+    'MIDPOINT': ['MIDPOINT'],
+    'MIDPRICE': ['MIDPRICE'],
+    'SAR': ['SAR'],
+    'SAREXT': ['SAREXT'],
+    'BBANDS': ['BBUpper', 'BBMiddle', 'BBLower'],
+    'BOLL': ['BBUpper', 'BBMiddle', 'BBLower'],
+    # Momentum Indicators
+    'MACD': ['MACD', 'MACDSignal', 'MACDHist'],
+    'MACDEXT': ['MACD', 'MACDSignal', 'MACDHist'],
+    'MACDFIX': ['MACD', 'MACDSignal', 'MACDHist'],
+    'PPO': ['PPO'],
+    'RSI': ['RSI'],
+    'STOCH': ['slowk', 'slowd'],
+    'STOCHF': ['FastK', 'FastD'],
+    'STOCHRSI': ['FastK', 'FastD'],
+    'WILLR': ['WILLR'],
+    'ADX': ['ADX'],
+    'ADXR': ['ADXR'],
+    'APO': ['APO'],
+    'AROON': ['AroonDown', 'AroonUp'],
+    'AROONOSC': ['AroonOSC'],
+    'BOP': ['BOP'],
+    'CCI': ['CCI'],
+    'CMO': ['CMO'],
+    'DX': ['DX'],
+    'MFI': ['MFI'],
+    'MINUS_DI': ['MINUS_DI'],
+    'MINUS_DM': ['MINUS_DM'],
+    'MOM': ['MOM'],
+    'PLUS_DI': ['PLUS_DI'],
+    'PLUS_DM': ['PLUS_DM'],
+    'ROC': ['ROC'],
+    'ROCP': ['ROCP'],
+    'ROCR': ['ROCR'],
+    'ROCR100': ['ROCR100'],
+    'TRIX': ['TRIX'],
+    'ULTOSC': ['ULTOSC'],
+    # Volume / Volatility
+    'AD': ['AD'],
+    'ADOSC': ['ADOSC'],
+    'OBV': ['OBV'],
+    'ATR': ['ATR'],
+    'NATR': ['NATR'],
+    'TRANGE': ['TRANGE'],
+    # Statistic Functions（R264 动态列表保留类：线性回归/标准差/时间序列预测/方差）
+    'LINEARREG': ['LINEARREG'],
+    'LINEARREG_ANGLE': ['LINEARREG_ANGLE'],
+    'LINEARREG_INTERCEPT': ['LINEARREG_INTERCEPT'],
+    'LINEARREG_SLOPE': ['LINEARREG_SLOPE'],
+    'STDDEV': ['STDDEV'],
+    'TSF': ['TSF'],
+    'VAR': ['VAR'],
+}
+
+
+# ==================== 种子数据（懒初始化，INSERT OR IGNORE 幂等） ====================
+# 数据库表全空时（未执行种子化脚本）用于兜底，保证 get_indicator/get_pattern 可用
+
+_SEED_CATEGORIES = [
+    # (name, display_name, description)
+    ('trend', '趋势类', '趋势分析指标'),
+    ('momentum', '动量类', '动量与强弱指标'),
+    ('volatility', '波动类', '波动率指标'),
+    ('volume', '成交量类', '成交量指标'),
+    ('price_pattern', '价格形态类', 'K线价格形态'),
+]
+
+# (name, display_name, category, description, output_names, talib_function)
+# output_names 必须与 TALIB_OUTPUT_MAP 列名约定一致
+_SEED_INDICATORS = [
+    ('MA', '移动平均线', 'trend', '简单移动平均线', ['MA'], 'SMA'),
+    ('SMA', '简单移动平均线', 'trend', '简单移动平均线', ['MA'], 'SMA'),
+    ('EMA', '指数移动平均线', 'trend', '指数移动平均线', ['EMA'], 'EMA'),
+    ('MACD', 'MACD指标', 'momentum', '指数平滑异同移动平均线', ['MACD', 'MACDSignal', 'MACDHist'], 'MACD'),
+    ('RSI', '相对强弱指标', 'momentum', '相对强弱指标', ['RSI'], 'RSI'),
+    ('PPO', '价格动量指标', 'momentum', '价格动量指标', ['PPO'], 'PPO'),
+    ('BOLL', '布林带', 'volatility', '布林带', ['BBUpper', 'BBMiddle', 'BBLower'], 'BBANDS'),
+    ('BBANDS', '布林带', 'volatility', '布林带', ['BBUpper', 'BBMiddle', 'BBLower'], 'BBANDS'),
+    ('STOCH', '随机指标', 'momentum', '随机指标KD', ['slowk', 'slowd'], 'STOCH'),
+    ('ATR', '平均真实波幅', 'volatility', '平均真实波幅', ['ATR'], 'ATR'),
+    ('CCI', '商品通道指数', 'momentum', '商品通道指数', ['CCI'], 'CCI'),
+    ('ADX', '平均方向指数', 'trend', '平均方向指数', ['ADX'], 'ADX'),
+    ('OBV', '能量潮指标', 'volume', '能量潮指标', ['OBV'], 'OBV'),
+    ('WILLR', '威廉指标', 'momentum', '威廉指标', ['WILLR'], 'WILLR'),
+    ('MOM', '动量指标', 'momentum', '动量指标', ['MOM'], 'MOM'),
+    ('ROC', '变动率指标', 'momentum', '变动率指标', ['ROC'], 'ROC'),
+    ('MFI', '资金流量指标', 'volume', '资金流量指标', ['MFI'], 'MFI'),
+]
+
+# (english_name, name, category, signal_type)
+# 与 db/init_pattern_algorithms.py 的 14 个 K 线形态 + 常见反转/持续形态对齐
+_SEED_PATTERNS = [
+    ('hammer', '锤头线', 'K线形态', 'buy'),
+    ('hanging_man', '上吊线', 'K线形态', 'sell'),
+    ('doji', '十字星', 'K线形态', 'neutral'),
+    ('shooting_star', '射击之星', 'K线形态', 'sell'),
+    ('inverted_hammer', '倒锤头线', 'K线形态', 'buy'),
+    ('marubozu', '光头光脚', 'K线形态', 'neutral'),
+    ('spinning_top', '纺锤线', 'K线形态', 'neutral'),
+    ('bullish_engulfing', '看涨吞没', 'K线形态', 'buy'),
+    ('bearish_engulfing', '看跌吞没', 'K线形态', 'sell'),
+    ('piercing_pattern', '刺透形态', 'K线形态', 'buy'),
+    ('dark_cloud_cover', '乌云盖顶', 'K线形态', 'sell'),
+    ('three_white_soldiers', '三白兵', 'K线形态', 'buy'),
+    ('three_black_crows', '三黑鸦', 'K线形态', 'sell'),
+    ('morning_star', '早晨之星', 'K线形态', 'buy'),
+    ('evening_star', '黄昏之星', 'K线形态', 'sell'),
+    ('double_top', '双重顶', '反转形态', 'sell'),
+    ('head_shoulders_top', '头肩顶', '反转形态', 'sell'),
+    ('triple_top', '三重顶', '反转形态', 'sell'),
+    ('double_bottom', '双重底', '反转形态', 'buy'),
+    ('head_shoulders_bottom', '头肩底', '反转形态', 'buy'),
+    ('triple_bottom', '三重底', '反转形态', 'buy'),
+    ('ascending_triangle', '上升三角形', '持续形态', 'buy'),
+    ('descending_triangle', '下降三角形', '持续形态', 'sell'),
+]
+
+# (indicator_name, param_name, description, param_type, default_value,
+#  min_value, max_value, step_value, choices, is_required, sort_order)
+# 与 supported_params 白名单（L1680-1706）及 technical_tab UI 控件约定对齐：
+# - matype 系列参数 default_value 为 TA-Lib matype 索引（0=SMA...8=T3），UI 以索引设 QComboBox
+# - default_value 必填且 json.dumps 序列化（get_indicator L914 消费）
+# - BOLL/BBANDS timeperiod 默认 5（项目中使用值，非 TA-Lib 标准 20）
+_SEED_INDICATOR_PARAMS = [
+    ('MA', 'timeperiod', '计算周期', 'int', 20, 1, 1000, 1, None, 1, 0),
+    ('SMA', 'timeperiod', '计算周期', 'int', 20, 1, 1000, 1, None, 1, 0),
+    ('EMA', 'timeperiod', '计算周期', 'int', 30, 1, 1000, 1, None, 1, 0),
+    ('MACD', 'fastperiod', '快线周期', 'int', 12, 1, 100, 1, None, 1, 0),
+    ('MACD', 'slowperiod', '慢线周期', 'int', 26, 1, 500, 1, None, 1, 1),
+    ('MACD', 'signalperiod', '信号线周期', 'int', 9, 1, 100, 1, None, 1, 2),
+    ('RSI', 'timeperiod', '计算周期', 'int', 14, 1, 1000, 1, None, 1, 0),
+    ('PPO', 'fastperiod', '快线周期', 'int', 12, 1, 100, 1, None, 1, 0),
+    ('PPO', 'slowperiod', '慢线周期', 'int', 26, 1, 500, 1, None, 1, 1),
+    ('PPO', 'matype', '均线类型', 'choice', 0, None, None, None,
+     ['SMA', 'EMA', 'WMA', 'DEMA', 'TEMA', 'TRIMA', 'KAMA', 'MAMA', 'T3'], 1, 2),
+    ('BOLL', 'timeperiod', '计算周期', 'int', 5, 1, 1000, 1, None, 1, 0),
+    ('BOLL', 'nbdevup', '上轨倍数', 'float', 2.0, 0.1, 10.0, 0.1, None, 1, 1),
+    ('BOLL', 'nbdevdn', '下轨倍数', 'float', 2.0, 0.1, 10.0, 0.1, None, 1, 2),
+    ('BBANDS', 'timeperiod', '计算周期', 'int', 5, 1, 1000, 1, None, 1, 0),
+    ('BBANDS', 'nbdevup', '上轨倍数', 'float', 2.0, 0.1, 10.0, 0.1, None, 1, 1),
+    ('BBANDS', 'nbdevdn', '下轨倍数', 'float', 2.0, 0.1, 10.0, 0.1, None, 1, 2),
+    ('STOCH', 'fastk_period', '快K周期', 'int', 5, 1, 100, 1, None, 1, 0),
+    ('STOCH', 'slowk_period', '慢K周期', 'int', 3, 1, 100, 1, None, 1, 1),
+    ('STOCH', 'slowk_matype', '慢K均线类型', 'choice', 0, None, None, None,
+     ['SMA', 'EMA', 'WMA', 'DEMA', 'TEMA', 'TRIMA', 'KAMA', 'MAMA', 'T3'], 1, 2),
+    ('STOCH', 'slowd_period', '慢D周期', 'int', 3, 1, 100, 1, None, 1, 3),
+    ('STOCH', 'slowd_matype', '慢D均线类型', 'choice', 0, None, None, None,
+     ['SMA', 'EMA', 'WMA', 'DEMA', 'TEMA', 'TRIMA', 'KAMA', 'MAMA', 'T3'], 1, 4),
+    ('ATR', 'timeperiod', '计算周期', 'int', 14, 1, 1000, 1, None, 1, 0),
+    ('CCI', 'timeperiod', '计算周期', 'int', 14, 1, 1000, 1, None, 1, 0),
+    ('ADX', 'timeperiod', '计算周期', 'int', 14, 1, 1000, 1, None, 1, 0),
+    ('WILLR', 'timeperiod', '计算周期', 'int', 14, 1, 1000, 1, None, 1, 0),
+    ('MOM', 'timeperiod', '计算周期', 'int', 10, 1, 1000, 1, None, 1, 0),
+    ('ROC', 'timeperiod', '计算周期', 'int', 10, 1, 1000, 1, None, 1, 0),
+    ('MFI', 'timeperiod', '计算周期', 'int', 14, 1, 1000, 1, None, 1, 0),
+    # OBV 无参数（supported_params 白名单为空列表）
+]
+
 ALLOWED_AST_NODES = frozenset({
     ast.Module,
     ast.Expr,
@@ -493,8 +669,82 @@ class UnifiedIndicatorService:
             
             self.conn.commit()
             logger.info("数据库表结构初始化完成")
+            # 懒初始化种子数据（幂等），保证指标/形态元数据可用
+            self._ensure_seed_data()
         except Exception as e:
             logger.error(f"创建数据库表失败: {str(e)}")
+            # 不抛出异常，允许系统继续运行
+
+    def _ensure_seed_data(self) -> None:
+        """懒初始化种子数据：指标分类/技术指标/形态定义（全部 INSERT OR IGNORE，天然幂等）
+
+        数据库由种子化脚本（db/complete_database_init.py 等）填充时本方法无副作用；
+        未执行任何种子化时（如新环境直接运行），此方法保证 get_indicator/get_pattern 可用。
+        """
+        try:
+            cursor = self.conn.cursor()
+
+            # 1. 指标分类
+            cat_ids = {}
+            for sort, (name, display_name, description) in enumerate(_SEED_CATEGORIES):
+                cursor.execute(
+                    'INSERT OR IGNORE INTO indicator_categories (name, display_name, description, sort_order) '
+                    'VALUES (?, ?, ?, ?)', (name, display_name, description, sort))
+                cursor.execute('SELECT id FROM indicator_categories WHERE name = ?', (name,))
+                row = cursor.fetchone()
+                if row:
+                    cat_ids[name] = row['id']
+
+            # 2. 技术指标 + TA-Lib 实现
+            for name, display_name, category, description, output_names, talib_fn in _SEED_INDICATORS:
+                cat_id = cat_ids.get(category)
+                if cat_id is None:
+                    continue
+                cursor.execute(
+                    'INSERT OR IGNORE INTO indicator '
+                    '(name, display_name, category_id, description, output_names) '
+                    'VALUES (?, ?, ?, ?, ?)',
+                    (name, display_name, cat_id, description, json.dumps(output_names)))
+                cursor.execute('SELECT id FROM indicator WHERE name = ?', (name,))
+                row = cursor.fetchone()
+                if not row:
+                    continue
+                cursor.execute(
+                    'INSERT OR IGNORE INTO indicator_implementations '
+                    '(indicator_id, engine, function_name, is_default, priority) '
+                    "VALUES (?, 'talib', ?, 1, 100)", (row['id'], talib_fn))
+
+            # 3. 形态定义（algorithm_code 由 db/init_pattern_algorithms.py 的 UPSERT 补充）
+            for english_name, name, category, signal_type in _SEED_PATTERNS:
+                cursor.execute(
+                    'INSERT OR IGNORE INTO pattern_types '
+                    '(name, english_name, category, signal_type, description) '
+                    'VALUES (?, ?, ?, ?, ?)',
+                    (name, english_name, category, signal_type, name))
+
+            # 4. 指标参数（default_value 必填；可选字段为 NULL 时 get_indicator L920-922 跳过）
+            for ind_name, param_name, description, param_type, default_value, \
+                    min_value, max_value, step_value, choices, is_required, sort_order in _SEED_INDICATOR_PARAMS:
+                cursor.execute('SELECT id FROM indicator WHERE name = ?', (ind_name,))
+                ind_row = cursor.fetchone()
+                if not ind_row:
+                    continue
+                cursor.execute(
+                    'INSERT OR IGNORE INTO indicator_parameters '
+                    '(indicator_id, name, description, param_type, default_value, '
+                    'min_value, max_value, step_value, choices, is_required, sort_order) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (ind_row['id'], param_name, description, param_type,
+                     json.dumps(default_value),
+                     json.dumps(min_value) if min_value is not None else None,
+                     json.dumps(max_value) if max_value is not None else None,
+                     json.dumps(step_value) if step_value is not None else None,
+                     json.dumps(choices) if choices else None,
+                     is_required, sort_order))
+
+            self.conn.commit()
+        except Exception as e:
+            logger.error(f"种子数据初始化失败: {str(e)}")
             # 不抛出异常，允许系统继续运行
 
     def close(self):
@@ -890,11 +1140,11 @@ class UnifiedIndicatorService:
         try:
             cursor = self.conn.cursor()
             # 同时支持中文名称和英文名称查询
+            # 注意：pattern_types 表使用 category TEXT 列，没有 category_id 外键，故无需 JOIN indicator_categories
             cursor.execute('''
-                SELECT p.*, c.name as category_name, c.display_name as category_display_name
-                FROM pattern_types p
-                LEFT JOIN indicator_categories c ON p.category_id = c.id
-                WHERE (p.name = ? OR p.english_name = ?) AND p.is_active = 1
+                SELECT *
+                FROM pattern_types
+                WHERE (name = ? OR english_name = ?) AND is_active = 1
             ''', (name, name))
 
             row = cursor.fetchone()
@@ -906,9 +1156,8 @@ class UnifiedIndicatorService:
                 'name': row['name'],
                 'english_name': row['english_name'],
                 'category': row['category'],
-                'category_id': row['category_id'],
-                'category_name': row['category_name'],
-                'category_display_name': row['category_display_name'],
+                'category_name': row['category'],
+                'category_display_name': row['category'],
                 'signal_type': row['signal_type'],
                 'description': row['description'],
                 'min_periods': row['min_periods'],
@@ -1065,6 +1314,21 @@ class UnifiedIndicatorService:
         if pattern:
             return self._calculate_pattern_indicator(name, df, params, pattern)
 
+        # 4. TA-Lib 直算兜底：数据库无指标记录（如未执行种子初始化）时，
+        #    对 TA-Lib 支持的常用技术指标直接计算，避免返回无列的空 DataFrame
+        if TALIB_AVAILABLE:
+            function_name = name.upper()
+            if hasattr(talib, function_name):
+                # R264: 已知输出映射用映射列名；未知函数（TA-Lib 新版本新增、
+                #       尚未同步 TALIB_OUTPUT_MAP）动态兜底为单输出（列名=函数名），
+                #       多输出函数会因解包失败被 _calculate_talib_indicator 异常兜底
+                #       （L1653 返回原df），不会导致"能选不能算"直接报不存在。
+                output_names = TALIB_OUTPUT_MAP.get(function_name, [function_name])
+                impl = {'engine': 'talib', 'function_name': function_name}
+                indicator = {'output_names': output_names}
+                logger.debug(f"指标 {name} 数据库无记录，使用 TA-Lib 直算兜底")
+                return self._calculate_talib_indicator(name, df, impl, params, indicator)
+
         logger.error(f"指标或形态 {name} 不存在")
         return df.copy()
 
@@ -1171,6 +1435,12 @@ class UnifiedIndicatorService:
                 
                 indicator = self.get_indicator(indicator_name)
                 if not indicator:
+                    # 数据库无指标记录时走 TA-Lib 直算兜底，避免静默跳过
+                    if (TALIB_AVAILABLE and hasattr(talib, indicator_name.upper())
+                            and indicator_name.upper() in TALIB_OUTPUT_MAP):
+                        impl = {'engine': 'talib', 'function_name': indicator_name.upper()}
+                        ind = {'output_names': TALIB_OUTPUT_MAP[indicator_name.upper()]}
+                        result_df = self._calculate_talib_indicator(indicator_name, result_df, impl, params, ind)
                     continue
                 
                 impl = self._get_best_implementation(indicator)
@@ -1335,65 +1605,6 @@ class UnifiedIndicatorService:
             logger.error(traceback.format_exc())
             return df.copy()
 
-    def _execute_pattern_algorithm(self, name: str, df: pd.DataFrame, params: Dict[str, Any], pattern: Dict[str, Any]) -> Union[pd.Series, Dict[str, pd.Series]]:
-        """执行形态识别算法"""
-        try:
-            # 获取算法代码
-            algorithm_code = pattern.get('algorithm_code', '')
-
-            if algorithm_code:
-                # 执行自定义算法
-                return self._execute_custom_pattern_algorithm(name, df, params, algorithm_code)
-            else:
-                # 使用内置形态识别
-                return self._execute_builtin_pattern_algorithm(name, df, params, pattern)
-
-        except Exception as e:
-            logger.error(f"执行形态算法 {name} 失败: {str(e)}")
-            # 返回默认的空信号
-            return pd.Series(0, index=df.index)
-
-    def _execute_custom_pattern_algorithm(self, name: str, df: pd.DataFrame, params: Dict[str, Any], algorithm_code: str) -> Union[pd.Series, Dict[str, pd.Series]]:
-        """执行自定义形态算法"""
-        try:
-            import re
-            if not re.match(r'^[\s\w\d.,;:()\[\]{}\+\-*/%=<>!&|@\'\"#\n]*$', algorithm_code):
-                logger.warning(f"形态算法 {name} 代码包含非法字符，已拒绝执行")
-                return pd.Series(0, index=df.index)
-
-            namespace = {
-                'np': np,
-                'pd': pd,
-                'df': df,
-                'params': params,
-                'name': name,
-                '__builtins__': {}
-            }
-
-            # 执行算法代码（先进行AST安全验证）
-            _validate_ast(algorithm_code)
-            exec(algorithm_code, namespace)
-
-            # 获取结果 - 约定算法代码应该设置result变量
-            if 'result' in namespace:
-                return namespace['result']
-            else:
-                logger.warning(f"形态算法 {name} 没有返回result变量")
-                return pd.Series(0, index=df.index)
-
-        except Exception as e:
-            logger.error(f"执行自定义形态算法 {name} 失败: {str(e)}")
-            return pd.Series(0, index=df.index)
-
-    def _execute_builtin_pattern_algorithm(self, name: str, df: pd.DataFrame, params: Dict[str, Any], pattern: Dict[str, Any]) -> Union[pd.Series, Dict[str, pd.Series]]:
-        try:
-            logger.warning(f"内置形态算法 '{name}' 为桩实现，未执行真实形态识别。请配置真实形态识别引擎。")
-            return pd.Series(0, index=df.index)
-
-        except Exception as e:
-            logger.error(f"执行内置形态算法 {name} 失败: {str(e)}")
-            return pd.Series(0, index=df.index)
-
     def _calculate_talib_indicator(self, name: str, df: pd.DataFrame, impl: Dict, params: Dict, indicator: Dict) -> pd.DataFrame:
         """使用TA-Lib计算指标"""
         if not TALIB_AVAILABLE:
@@ -1437,79 +1648,78 @@ class UnifiedIndicatorService:
                 # 通用调用
                 talib_result = talib_func(**inputs)
 
-            # 处理返回结果
+            # 处理返回结果（R267 修复：副本操作，绝不原地修改调用方传入的 df。
+            # 根因：直算兜底路径（calculate_indicator L1318-1329）直接把原始 kdata 传入本方法，
+            # 原实现 df[output_name]=... 原地添加列并返回同一对象，渲染循环对每个指标传同一个 kdata，
+            # 导致所有指标的结果列累积在同一 DataFrame（实测 MAMA 结果含 ['KAMA','MAMA','MAMAFix']），
+            # 渲染时每个指标把全部历史累积列都画出来 → KAMA/MAMA/TEMA 等图形趋同）
             output_names = indicator.get('output_names', [])
+            result_df = df.copy()
 
             if isinstance(talib_result, tuple):
                 # 多个输出
                 for i, output_name in enumerate(output_names):
                     if i < len(talib_result):
-                        df[output_name] = pd.Series(talib_result[i], index=df.index)
+                        result_df[output_name] = pd.Series(talib_result[i], index=df.index)
             else:
                 # 单个输出
                 if output_names:
-                    df[output_names[0]] = pd.Series(talib_result, index=df.index)
+                    result_df[output_names[0]] = pd.Series(talib_result, index=df.index)
                 else:
-                    df[name] = pd.Series(talib_result, index=df.index)
+                    result_df[name] = pd.Series(talib_result, index=df.index)
 
-            return df
+            return result_df
 
         except Exception as e:
             logger.error(f"TA-Lib计算指标 {name} 失败: {str(e)}")
-            return df
+            return df.copy()
 
     def _prepare_talib_inputs(self, df: pd.DataFrame, function_name: str, params: Dict) -> Dict:
-        """准备TA-Lib函数的输入参数"""
+        """准备TA-Lib函数的输入参数
+
+        R263 系统性重构：由逐函数 if/elif 改为数据驱动映射（对齐 indicator_adapter.py
+        的 _get_talib_input_columns 同源定义），覆盖 UI 列表全部 46 个 TA-Lib 指标。
+        此前仅覆盖约 20 个函数，其余约 22 个落入默认 close 分支，导致
+        MIDPRICE(high,low) 等以单输入调用抛 TypeError 被 L1653 吞错 → UI"能选不能算"。
+        """
         inputs = {}
 
-        # 根据函数名确定需要的输入列，确保数据类型为float64
-        if function_name in ['MA', 'SMA', 'EMA', 'RSI', 'ROC', 'MOM', 'TRIX']:
+        # 输入列映射：TA-Lib 标准签名（key = 函数名，value = 需要的K线列）
+        close_only = {'MA', 'SMA', 'EMA', 'WMA', 'TRIMA', 'KAMA', 'MAMA', 'T3',
+                      'DEMA', 'TEMA', 'HT_TRENDLINE', 'MIDPOINT', 'MACD', 'MACDEXT',
+                      'MACDFIX', 'PPO', 'RSI', 'APO', 'CMO', 'MOM', 'ROC', 'ROCP',
+                      'ROCR', 'ROCR100', 'TRIX', 'STOCHRSI', 'BBANDS', 'BOLL',
+                      # R264 统计类（单输入 close）
+                      'LINEARREG', 'LINEARREG_ANGLE', 'LINEARREG_INTERCEPT',
+                      'LINEARREG_SLOPE', 'STDDEV', 'TSF', 'VAR'}
+        high_low = {'AROON', 'AROONOSC', 'MIDPRICE', 'SAR', 'SAREXT', 'MINUS_DM', 'PLUS_DM'}
+        high_low_close = {'STOCH', 'STOCHF', 'WILLR', 'ATR', 'CCI', 'ADX', 'ADXR',
+                          'DX', 'MINUS_DI', 'PLUS_DI', 'NATR', 'ULTOSC',
+                          'TRANGE'}  # R264: TRANGE(high, low, close) TA-Lib 标准三输入
+        close_volume = {'OBV'}
+        high_low_close_volume = {'MFI', 'ADOSC',
+                                 'AD'}  # R264: AD(high, low, close, volume)
+        open_high_low_close = {'BOP'}  # R263: BOP(open, high, low, close) TA-Lib 标准
+
+        if function_name in close_only:
             inputs['close'] = df['close'].astype(np.float64).values
-        elif function_name in ['WILLR']:
+        elif function_name in high_low:
+            inputs['high'] = df['high'].astype(np.float64).values
+            inputs['low'] = df['low'].astype(np.float64).values
+        elif function_name in high_low_close:
             inputs['high'] = df['high'].astype(np.float64).values
             inputs['low'] = df['low'].astype(np.float64).values
             inputs['close'] = df['close'].astype(np.float64).values
-        elif function_name in ['MACD']:
-            inputs['close'] = df['close'].astype(np.float64).values
-        elif function_name in ['BBANDS', 'BOLL']:
-            inputs['close'] = df['close'].astype(np.float64).values
-        elif function_name in ['STOCH', 'STOCHF']:
-            inputs['high'] = df['high'].astype(np.float64).values
-            inputs['low'] = df['low'].astype(np.float64).values
-            inputs['close'] = df['close'].astype(np.float64).values
-        elif function_name in ['ATR', 'CCI']:
-            inputs['high'] = df['high'].astype(np.float64).values
-            inputs['low'] = df['low'].astype(np.float64).values
-            inputs['close'] = df['close'].astype(np.float64).values
-        elif function_name in ['OBV']:
+        elif function_name in close_volume:
             inputs['close'] = df['close'].astype(np.float64).values
             inputs['volume'] = df['volume'].astype(np.float64).values
-        elif function_name in ['ADX']:
-            inputs['high'] = df['high'].astype(np.float64).values
-            inputs['low'] = df['low'].astype(np.float64).values
-            inputs['close'] = df['close'].astype(np.float64).values
-        elif function_name in ['SAR']:
-            inputs['high'] = df['high'].astype(np.float64).values
-            inputs['low'] = df['low'].astype(np.float64).values
-        elif function_name in ['MFI']:
-            inputs['high'] = df['high'].astype(np.float64).values
-            inputs['low'] = df['low'].astype(np.float64).values
-            inputs['close'] = df['close'].astype(np.float64).values
-            inputs['volume'] = df['volume'].astype(np.float64).values
-        elif function_name in ['ADOSC']:
+        elif function_name in high_low_close_volume:
             inputs['high'] = df['high'].astype(np.float64).values
             inputs['low'] = df['low'].astype(np.float64).values
             inputs['close'] = df['close'].astype(np.float64).values
             inputs['volume'] = df['volume'].astype(np.float64).values
-        elif function_name == 'AROON':
-            # AROON: high + low (TA-Lib 标准)
-            inputs['high'] = df['high'].astype(np.float64).values
-            inputs['low'] = df['low'].astype(np.float64).values
-        elif function_name in ['DEMA', 'TEMA']:
-            # DEMA/TEMA: close (TA-Lib 标准)
-            inputs['close'] = df['close'].astype(np.float64).values
-        elif function_name == 'NATR':
-            # NATR: high + low + close (TA-Lib 标准)
+        elif function_name in open_high_low_close:
+            inputs['open'] = df['open'].astype(np.float64).values
             inputs['high'] = df['high'].astype(np.float64).values
             inputs['low'] = df['low'].astype(np.float64).values
             inputs['close'] = df['close'].astype(np.float64).values
@@ -1531,6 +1741,7 @@ class UnifiedIndicatorService:
             'CCI': ['timeperiod'],
             'ADX': ['timeperiod'],
             'MACD': ['fastperiod', 'slowperiod', 'signalperiod'],
+            'PPO': ['fastperiod', 'slowperiod', 'matype'],
             'BBANDS': ['timeperiod', 'nbdevup', 'nbdevdn'],
             'BOLL': ['timeperiod', 'nbdevup', 'nbdevdn'],
             'STOCH': ['fastk_period', 'slowk_period', 'slowk_matype', 'slowd_period', 'slowd_matype'],

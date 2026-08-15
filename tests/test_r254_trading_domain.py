@@ -24,6 +24,8 @@ R254 交叉验证回归测试: 实盘交易域 P0/P1 修复
 - TradingPanel 构造/方法测试: offscreen QApplication + SimpleNamespace 面板 + MagicMock 容器
 - TradeWorker 同步执行: patch QThread.start 直接调用 run()
 - 本文件末尾恢复被 mock 污染的 sys.modules 条目
+- R272 治理: 模块级覆盖 sys.modules 前保存原真实模块引用, 文件末尾恢复真实模块
+  (而非 pop 移除), 消除后续文件类身份漂移
 """
 import os
 import sys
@@ -59,11 +61,24 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+# ---------------------------------------------------------------------------
+# R272 治理: sys.modules 覆盖前保存原真实模块引用, 末尾恢复真实模块
+# ---------------------------------------------------------------------------
+_ORIGINAL_MODULES: dict = {}
+
+
+def _install(name, mod):
+    """R272 治理: 覆盖 sys.modules 前保存原真实模块引用 (存在才保存)"""
+    if name in sys.modules and name not in _ORIGINAL_MODULES:
+        _ORIGINAL_MODULES[name] = sys.modules[name]
+    sys.modules[name] = mod
+
+
 def _make_mock_module(name: str) -> MagicMock:
     _m = MagicMock()
     _m.__name__ = name
     _m.__file__ = f'<mock:{name}>'
-    sys.modules[name] = _m
+    _install(name, _m)
     return _m
 
 
@@ -73,7 +88,7 @@ def _load_module_from_file(module_name: str, rel_path: str):
     spec = importlib.util.spec_from_file_location(
         module_name, os.path.join(ROOT, rel_path))
     module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
+    _install(module_name, module)
     spec.loader.exec_module(module)
     return module
 
@@ -426,21 +441,27 @@ class TestAssetTypeSelection(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 恢复被 mock 污染的 sys.modules 条目 (同 R252/R253 交叉审查教训)
-# R255: mock 窗口 (:84) 内 _load_module_from_file 加载的消费者副本
+# R272 治理: 恢复真实模块 (而非 pop 移除) — 消除后续文件类身份漂移
+# R255: mock 窗口内 _load_module_from_file 加载的消费者副本
 # (order_service/account_manager/order_executor 等) 内部固化了对 order_repository
-# mock 的引用, 仅 pop order_repository 不够 —— 副本残留 sys.modules 会污染
+# mock 的引用, 仅恢复 order_repository 不够 —— 副本若残留 sys.modules 会污染
 # 后续文件 (如 test_r255_order_repository.py 构造 OrderService 拿到 mock repository)。
-# 一并弹出全部副本, 让后续文件重新加载真实模块。
+# 一并按 R272 语义恢复全部注入条目 (原本存在的放回真实模块, 原本不存在的 pop)。
 # ---------------------------------------------------------------------------
-for _mod_name in ('core.trading.order_repository',
-                  'core.trading.account_repository',
-                  'core.trading.order_service',
-                  'core.trading.order_models',
-                  'core.trading.order_executor',
-                  'core.trading.account_manager',
-                  'gui.widgets.trading_panel'):
-    sys.modules.pop(_mod_name, None)
+_ALL_INJECTED_NAMES = (
+    'core.trading.order_repository',
+    'core.trading.account_repository',
+    'core.trading.order_service',
+    'core.trading.order_models',
+    'core.trading.order_executor',
+    'core.trading.account_manager',
+    'gui.widgets.trading_panel',
+)
+for _name, _orig in _ORIGINAL_MODULES.items():
+    sys.modules[_name] = _orig
+for _name in _ALL_INJECTED_NAMES:
+    if _name not in _ORIGINAL_MODULES:
+        sys.modules.pop(_name, None)
 
 
 if __name__ == '__main__':

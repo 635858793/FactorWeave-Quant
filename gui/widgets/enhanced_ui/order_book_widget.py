@@ -22,6 +22,7 @@ import numpy as np
 from loguru import logger
 
 from core.events.event_bus import EventBus, OrderBookEvent
+from core.utils.mpl_blit import BlitEngine
 
 
 class OrderBookDepthChart(FigureCanvas):
@@ -44,6 +45,11 @@ class OrderBookDepthChart(FigureCanvas):
 
         self.setup_chart()
 
+        # R267 blit：订单簿逐快照高频刷新，blit 局部重绘避免每帧全画布 draw + 刻度重算
+        self._blit = BlitEngine(self, bbox_getter=lambda: self.ax.bbox,
+                                log_tag='[DepthChart]')
+        self._depth_artists = []  # 动态层 artist 引用（fill_between/plot/legend）
+
     def setup_chart(self):
         """设置图表样式"""
         self.ax.set_title('订单簿深度图', fontsize=10, fontweight='bold')
@@ -56,14 +62,22 @@ class OrderBookDepthChart(FigureCanvas):
         plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
         plt.rcParams['axes.unicode_minus'] = False
 
-    def update_data(self, bids: List[Dict], asks: List[Dict]):
-        """更新订单簿数据"""
-        try:
-            # 清空之前的数据
-            self.ax.clear()
-            self.setup_chart()
+    def _clear_depth_artists(self):
+        """移除上一帧动态层 artist（保留轴/网格/刻度静态层）"""
+        for artist in self._depth_artists:
+            try:
+                artist.remove()
+            except Exception as e:
+                logger.debug(f"order_book depth: {e}")
+        self._depth_artists = []
 
+    def update_data(self, bids: List[Dict], asks: List[Dict]):
+        """更新订单簿数据（R267 blit：动态层局部重绘，轴范围变化时重建背景）"""
+        try:
+            # 空数据：移除动态层并全量重绘（blit 背景失效，防残留）
             if not bids or not asks:
+                self._clear_depth_artists()
+                self._blit.invalidate()
                 self.draw()
                 return
 
@@ -79,36 +93,57 @@ class OrderBookDepthChart(FigureCanvas):
             bid_cumulative = np.cumsum(bid_volumes[::-1])[::-1]  # 从高价到低价累计
             ask_cumulative = np.cumsum(ask_volumes)  # 从低价到高价累计
 
+            # 移除上一帧动态层，重建本帧（保留静态轴配置）
+            self._clear_depth_artists()
+
             # 绘制买盘（红色）
-            self.ax.fill_between(bid_prices, 0, bid_cumulative,
-                                 step='post', alpha=0.7, color='#E74C3C', label='买盘')
-            self.ax.plot(bid_prices, bid_cumulative,
-                         color='#C0392B', linewidth=2, drawstyle='steps-post')
+            self._depth_artists.append(self.ax.fill_between(
+                bid_prices, 0, bid_cumulative,
+                step='post', alpha=0.7, color='#E74C3C', label='买盘'))
+            self._depth_artists.append(self.ax.plot(
+                bid_prices, bid_cumulative,
+                color='#C0392B', linewidth=2, drawstyle='steps-post')[0])
 
             # 绘制卖盘（绿色）
-            self.ax.fill_between(ask_prices, 0, ask_cumulative,
-                                 step='pre', alpha=0.7, color='#27AE60', label='卖盘')
-            self.ax.plot(ask_prices, ask_cumulative,
-                         color='#229954', linewidth=2, drawstyle='steps-pre')
+            self._depth_artists.append(self.ax.fill_between(
+                ask_prices, 0, ask_cumulative,
+                step='pre', alpha=0.7, color='#27AE60', label='卖盘'))
+            self._depth_artists.append(self.ax.plot(
+                ask_prices, ask_cumulative,
+                color='#229954', linewidth=2, drawstyle='steps-pre')[0])
 
-            # 添加图例
-            self.ax.legend(loc='upper right')
+            # 图例（动态层：跟随重建，避免背景残留旧图例）
+            self._depth_artists.append(self.ax.legend(loc='upper right'))
 
-            # 设置坐标轴范围
+            # 设置坐标轴范围（变化时 blit 背景含旧刻度，必须失效重建）
             all_prices = bid_prices + ask_prices
             if all_prices:
                 price_range = max(all_prices) - min(all_prices)
                 margin = price_range * 0.05
-                self.ax.set_xlim(min(all_prices) - margin, max(all_prices) + margin)
+                new_xlim = (min(all_prices) - margin, max(all_prices) + margin)
+                old_xlim = self.ax.get_xlim()
+                self.ax.set_xlim(*new_xlim)
+                if old_xlim != new_xlim:
+                    self._blit.invalidate()
 
             all_volumes = list(bid_cumulative) + list(ask_cumulative)
             if all_volumes:
-                self.ax.set_ylim(0, max(all_volumes) * 1.1)
+                new_ylim = (0, max(all_volumes) * 1.1)
+                old_ylim = self.ax.get_ylim()
+                self.ax.set_ylim(*new_ylim)
+                if old_ylim != new_ylim:
+                    self._blit.invalidate()
 
-            self.draw()
+            # blit 局部重绘（首帧/失效后自动全量 draw+copy 重建背景，失败回退 draw_idle）
+            self._blit.render(self._depth_artists)
 
         except Exception as e:
             logger.error(f"更新订单簿深度图失败: {e}")
+            # 异常时确保画布最终被刷新，避免画面卡死
+            try:
+                self.draw_idle()
+            except Exception:
+                pass
 
 
 class OrderBookWidget(QWidget):

@@ -167,11 +167,23 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
             if not self._is_connected:
                 self.connect()
 
-            test_response = self.session.get("https://www.eastmoney.com", timeout=5)
-            if test_response.status_code == 200:
-                return HealthCheckResult(is_healthy=True, message="连接正常")
-            else:
-                return HealthCheckResult(is_healthy=False, message=f"HTTP错误: {test_response.status_code}")
+            # R283: 健康检查升级为数据级验证。原实现仅验证 www.eastmoney.com 首页可达，
+            # 数据接口挂了也返回 is_healthy=True → 熔断计数被健康检查持续清零、
+            # 不可用数据源永远无法被熔断。复用 connect 的真实行情接口探测
+            # （ulist.np/get 返回 600000 实时行情），数据接口不可达视为不健康。
+            test_url = self.api_endpoints['realtime_quotes']
+            params = {'secids': '1.600000', 'fields': 'f2,f3,f4', 'fltt': '2'}
+            response = self.session.get(test_url, params=params, timeout=5)
+
+            if response.status_code == 200:
+                try:
+                    payload = response.json()
+                    if payload.get('data'):
+                        return HealthCheckResult(is_healthy=True, message="连接正常")
+                except ValueError:
+                    pass
+                return HealthCheckResult(is_healthy=False, message="数据接口响应格式异常")
+            return HealthCheckResult(is_healthy=False, message=f"HTTP错误: {response.status_code}")
 
         except Exception as e:
             return HealthCheckResult(is_healthy=False, message=f"健康检查失败: {e}")
@@ -525,6 +537,8 @@ class EastmoneyUnifiedPlugin(IDataSourcePlugin):
                 '15m': '15',
                 '30m': '30',
                 '60m': '60',
+                '1H': '60',      # Period.MIN60 枚举值（R275 补齐，防静默降级日线）
+                '1h': '60',
                 '1min': '1',
                 '5min': '5',
                 '15min': '15',

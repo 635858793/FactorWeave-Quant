@@ -39,7 +39,7 @@ class AdaptiveTakeProfit(TakeProfitStrategy):
     基于pandas DataFrame的自定义止盈策略
     """
 
-    def __init__(self):
+    def __init__(self, params: Optional[Dict[str, Any]] = None):
         super(AdaptiveTakeProfit, self).__init__("AdaptiveTakeProfit")
 
         # 设置默认参数
@@ -55,6 +55,11 @@ class AdaptiveTakeProfit(TakeProfitStrategy):
         self.set_param("volatility_factor", 0.5)  # 波动率因子
         self.set_param("trend_factor", 0.3)      # 趋势因子
         self.set_param("market_factor", 0.2)     # 市场因子
+
+        # R269-D3: 支持参数覆盖 (与 AdaptiveStopLoss/EnhancedMoneyManager 构造对齐)
+        if params is not None and isinstance(params, dict):
+            for key, value in params.items():
+                self.set_param(key, value)
 
     def calculate_profit_price(self, data: pd.DataFrame, current_price: float, 
                              position_info: Optional[Dict[str, Any]] = None) -> float:

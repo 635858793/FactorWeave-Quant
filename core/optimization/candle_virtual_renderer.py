@@ -28,6 +28,8 @@ from core.advanced_optimization.performance.virtualization import (
 )
 
 from core.optimization.base_virtual_renderer import BaseVirtualRenderer
+# R292 涨跌停精确判定（按板块计算涨/跌停价，替代固定 4.8% 阈值）
+from core.rendering.limit_price import classify_limit_up_down, extract_symbol
 
 
 class CandleVirtualRenderer(BaseVirtualRenderer):
@@ -125,11 +127,20 @@ class CandleVirtualRenderer(BaseVirtualRenderer):
                         if hasattr(current_style, key):
                             setattr(current_style, key, value)
                 
+                # R292 精确判定：按板块涨/跌停价（与各渲染路径共用
+                # core/rendering/limit_price.py，替代固定 4.8% 阈值）
+                is_limit_up, is_limit_down = classify_limit_up_down(
+                    closes, highs, lows, extract_symbol(data))
+                
                 # 准备K线数据
-                verts_up = []  # 阳线（上涨）
-                verts_down = []  # 阴线（下跌）
+                verts_up = []  # 阳线（上涨，红色）
+                verts_down = []  # 阴线（下跌，绿色）
+                verts_limit_up = []  # 涨停（橙色）
+                verts_limit_down = []  # 跌停（紫色）
                 segments_up = []  # 上涨影线
                 segments_down = []  # 下跌影线
+                segments_limit_up = []  # 涨停影线
+                segments_limit_down = []  # 跌停影线
                 
                 # 增加蜡烛宽度从0.3到0.45，使蜡烛更宽更清晰
                 candle_half_width = 0.45
@@ -137,14 +148,26 @@ class CandleVirtualRenderer(BaseVirtualRenderer):
                     left = x_val - candle_half_width
                     right = x_val + candle_half_width
                     
-                    if close >= open_price:
-                        # 阳线
+                    if is_limit_up[i]:
+                        # 涨停（橙色）
+                        verts_limit_up.append([
+                            (left, open_price), (left, close), (right, close), (right, open_price)
+                        ])
+                        segments_limit_up.append([(x_val, low), (x_val, high)])
+                    elif is_limit_down[i]:
+                        # 跌停（紫色）
+                        verts_limit_down.append([
+                            (left, open_price), (left, close), (right, close), (right, open_price)
+                        ])
+                        segments_limit_down.append([(x_val, low), (x_val, high)])
+                    elif close >= open_price:
+                        # 阳线（上涨）
                         verts_up.append([
                             (left, open_price), (left, close), (right, close), (right, open_price)
                         ])
                         segments_up.append([(x_val, low), (x_val, high)])
                     else:
-                        # 阴线
+                        # 阴线（下跌）
                         verts_down.append([
                             (left, open_price), (left, close), (right, close), (right, open_price)
                         ])
@@ -171,6 +194,26 @@ class CandleVirtualRenderer(BaseVirtualRenderer):
                     )
                     ax.add_collection(collection_down)
                 
+                if verts_limit_up:
+                    collection_limit_up = PolyCollection(
+                        verts_limit_up,
+                        facecolor=current_style.candle_limit_up_color,  # 涨停实心（橙色）
+                        edgecolor=current_style.candle_limit_up_color,
+                        linewidth=1.2,
+                        alpha=current_style.alpha
+                    )
+                    ax.add_collection(collection_limit_up)
+                
+                if verts_limit_down:
+                    collection_limit_down = PolyCollection(
+                        verts_limit_down,
+                        facecolor=current_style.candle_limit_down_color,  # 跌停实心（紫色）
+                        edgecolor=current_style.candle_limit_down_color,
+                        linewidth=1.2,
+                        alpha=current_style.alpha
+                    )
+                    ax.add_collection(collection_limit_down)
+                
                 # 绘制影线
                 if segments_up:
                     line_collection_up = LineCollection(
@@ -189,6 +232,24 @@ class CandleVirtualRenderer(BaseVirtualRenderer):
                         alpha=current_style.alpha
                     )
                     ax.add_collection(line_collection_down)
+                
+                if segments_limit_up:
+                    line_collection_limit_up = LineCollection(
+                        segments_limit_up,
+                        colors=current_style.candle_limit_up_color,
+                        linewidth=0.8,
+                        alpha=current_style.alpha
+                    )
+                    ax.add_collection(line_collection_limit_up)
+                
+                if segments_limit_down:
+                    line_collection_limit_down = LineCollection(
+                        segments_limit_down,
+                        colors=current_style.candle_limit_down_color,
+                        linewidth=0.8,
+                        alpha=current_style.alpha
+                    )
+                    ax.add_collection(line_collection_limit_down)
                 
                 if current_style.show_chunks:
                     self._render_chunk_boundaries(ax)
@@ -332,11 +393,33 @@ class CandleVirtualRenderer(BaseVirtualRenderer):
             lows = chunk_data['low'].values
             closes = chunk_data['close'].values
             
+            # R292 精确判定：按板块涨/跌停价（与各渲染路径共用
+            # core/rendering/limit_price.py，替代固定 4.8% 阈值）。
+            # 跨块边界用全量数据计算保证准确，再按块切片。
+            if self.candle_data is not None and hasattr(self.candle_data, 'columns') \
+                    and 'close' in self.candle_data.columns:
+                all_closes = self.candle_data['close'].values
+                all_highs = self.candle_data['high'].values
+                all_lows = self.candle_data['low'].values
+                all_lu, all_ld = classify_limit_up_down(
+                    all_closes, all_highs, all_lows,
+                    extract_symbol(self.candle_data))
+                end_idx = base_index + len(closes)
+                is_limit_up = all_lu[base_index:end_idx]
+                is_limit_down = all_ld[base_index:end_idx]
+            else:
+                is_limit_up, is_limit_down = classify_limit_up_down(
+                    closes, highs, lows, extract_symbol(chunk_data))
+            
             # 准备K线数据
-            verts_up = []  # 阳线（上涨）
-            verts_down = []  # 阴线（下跌）
+            verts_up = []  # 阳线（上涨，红色）
+            verts_down = []  # 阴线（下跌，绿色）
+            verts_limit_up = []  # 涨停（橙色）
+            verts_limit_down = []  # 跌停（紫色）
             segments_up = []  # 上涨影线
             segments_down = []  # 下跌影线
+            segments_limit_up = []  # 涨停影线
+            segments_limit_down = []  # 跌停影线
             
             # 增加蜡烛宽度从0.3到0.45，使蜡烛更宽更清晰
             candle_half_width = 0.45
@@ -344,14 +427,26 @@ class CandleVirtualRenderer(BaseVirtualRenderer):
                 left = x_val - candle_half_width
                 right = x_val + candle_half_width
                 
-                if close >= open_price:
-                    # 阳线
+                if is_limit_up[i]:
+                    # 涨停（橙色）
+                    verts_limit_up.append([
+                        (left, open_price), (left, close), (right, close), (right, open_price)
+                    ])
+                    segments_limit_up.append([(x_val, low), (x_val, high)])
+                elif is_limit_down[i]:
+                    # 跌停（紫色）
+                    verts_limit_down.append([
+                        (left, open_price), (left, close), (right, close), (right, open_price)
+                    ])
+                    segments_limit_down.append([(x_val, low), (x_val, high)])
+                elif close >= open_price:
+                    # 阳线（上涨）
                     verts_up.append([
                         (left, open_price), (left, close), (right, close), (right, open_price)
                     ])
                     segments_up.append([(x_val, low), (x_val, high)])
                 else:
-                    # 阴线
+                    # 阴线（下跌）
                     verts_down.append([
                         (left, open_price), (left, close), (right, close), (right, open_price)
                     ])
@@ -378,6 +473,26 @@ class CandleVirtualRenderer(BaseVirtualRenderer):
                 )
                 ax.add_collection(collection_down)
             
+            if verts_limit_up:
+                collection_limit_up = PolyCollection(
+                    verts_limit_up,
+                    facecolor=style.candle_limit_up_color,  # 涨停实心（橙色）
+                    edgecolor=style.candle_limit_up_color,
+                    linewidth=1.2,
+                    alpha=style.alpha
+                )
+                ax.add_collection(collection_limit_up)
+            
+            if verts_limit_down:
+                collection_limit_down = PolyCollection(
+                    verts_limit_down,
+                    facecolor=style.candle_limit_down_color,  # 跌停实心（紫色）
+                    edgecolor=style.candle_limit_down_color,
+                    linewidth=1.2,
+                    alpha=style.alpha
+                )
+                ax.add_collection(collection_limit_down)
+            
             # 绘制影线
             if segments_up:
                 line_collection_up = LineCollection(
@@ -396,6 +511,24 @@ class CandleVirtualRenderer(BaseVirtualRenderer):
                     alpha=style.alpha
                 )
                 ax.add_collection(line_collection_down)
+            
+            if segments_limit_up:
+                line_collection_limit_up = LineCollection(
+                    segments_limit_up,
+                    colors=style.candle_limit_up_color,
+                    linewidth=1.0,
+                    alpha=style.alpha
+                )
+                ax.add_collection(line_collection_limit_up)
+            
+            if segments_limit_down:
+                line_collection_limit_down = LineCollection(
+                    segments_limit_down,
+                    colors=style.candle_limit_down_color,
+                    linewidth=1.0,
+                    alpha=style.alpha
+                )
+                ax.add_collection(line_collection_limit_down)
             
             # 调试模式下显示块边界
             if style.show_chunks:

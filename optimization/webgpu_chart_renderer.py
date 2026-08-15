@@ -183,7 +183,7 @@ class WebGPUChartRenderer(BaseChartRenderer):
             # 直接使用原有matplotlib实现
             super().render_volume(ax, data, style, x, use_datetime_axis)
 
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None):
+    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):
         """
         渲染线图 - WebGPU加速版本
 
@@ -191,6 +191,8 @@ class WebGPUChartRenderer(BaseChartRenderer):
             ax: matplotlib轴对象
             data: 数据序列
             style: 样式字典
+            x: 可选，X轴数据（与其他渲染器接口对齐；为None时按索引/日期自动推导）
+            use_datetime_axis: 是否使用datetime X轴（预留，与其他渲染器对齐）
         """
         # 首先检查数据有效性
         if data is None or data.empty:
@@ -203,7 +205,7 @@ class WebGPUChartRenderer(BaseChartRenderer):
             # 记录WebGPU渲染前的状态
             initial_collections = len(ax.collections) if hasattr(ax, 'collections') else 0
             
-            webgpu_success = self._try_webgpu_render('line', ax, data, style)
+            webgpu_success = self._try_webgpu_render('line', ax, data, style, x, use_datetime_axis)
             
             # 检查WebGPU渲染是否真正生效
             if webgpu_success and hasattr(ax, 'collections'):
@@ -215,7 +217,7 @@ class WebGPUChartRenderer(BaseChartRenderer):
         # 如果WebGPU渲染失败或未使用，调用父类matplotlib实现
         if not webgpu_success:
             # 直接使用原有matplotlib实现
-            super().render_line(ax, data, style)
+            super().render_line(ax, data, style, x, use_datetime_axis)
 
     def _should_use_webgpu(self) -> bool:
         """判断是否应该使用WebGPU"""

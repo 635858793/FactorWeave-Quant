@@ -29,6 +29,7 @@ from core.services import StockService
 from core.services.unified_data_manager import UnifiedDataManager
 from core.services.asset_service import AssetService
 from core.plugin_types import AssetType
+from core.indicators.indicators_algorithm import BUILTIN_INDICATORS
 
 
 
@@ -2326,15 +2327,16 @@ class LeftPanel(BasePanel):
     def _initialize_indicators(self) -> None:
         """初始化指标数据"""
         try:
-            # 内置指标
+            # 内置指标（R282: 判组唯一来源 BUILTIN_INDICATORS，与 middle_panel 口径一致；
+            # CCI/OBV 原在此列为内置，现移出由下方 TA-Lib 动态列表提供 → 统一走 talib 组直算）
+            _builtin_types = [
+                ('MA', '趋势类'), ('MACD', '趋势类'), ('BOLL', '趋势类'),
+                ('RSI', '震荡类'), ('KDJ', '震荡类'),
+            ]
             self.builtin_indicators = [
-                {"name": "MA", "type": "趋势类"},
-                {"name": "MACD", "type": "趋势类"},
-                {"name": "BOLL", "type": "趋势类"},
-                {"name": "RSI", "type": "震荡类"},
-                {"name": "KDJ", "type": "震荡类"},
-                {"name": "CCI", "type": "震荡类"},
-                {"name": "OBV", "type": "成交量类"},
+                {"name": name, "type": ind_type}
+                for name, ind_type in _builtin_types
+                if name in BUILTIN_INDICATORS
             ]
 
             # 尝试获取ta-lib指标
@@ -2356,9 +2358,14 @@ class LeftPanel(BasePanel):
             # 自定义指标（预留）
             self.custom_indicators = []
 
-            # 合并所有指标
-            self.all_indicators = self.builtin_indicators + \
-                self.talib_indicators + self.custom_indicators
+            # 合并所有指标（按名称去重，内置优先：内置与 ta-lib 列表存在 MA/MACD/RSI/CCI 重复）
+            seen_names = set()
+            merged_indicators = []
+            for ind in self.builtin_indicators + self.talib_indicators + self.custom_indicators:
+                if ind["name"] not in seen_names:
+                    seen_names.add(ind["name"])
+                    merged_indicators.append(ind)
+            self.all_indicators = merged_indicators
 
             # 填充指标列表
             self._populate_indicator_list()
@@ -2392,20 +2399,17 @@ class LeftPanel(BasePanel):
                 item.setData(Qt.UserRole, ind["type"])
                 item.setTextAlignment(Qt.AlignCenter)
                 item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                # R282: 中文名 tooltip（KAMA/MAMA/TEMA 等不再裸英文，悬停可见中文含义）
+                try:
+                    from core.indicator_adapter import get_talib_chinese_name
+                    item.setToolTip(get_talib_chinese_name(ind["name"]))
+                except Exception:
+                    item.setToolTip(ind["name"])
                 self.indicator_list.setItem(row, col, item)
 
                 # 默认选中MA指标
                 if ind["name"] == "MA":
                     item.setSelected(True)
-
-            # 默认选中MA指标（如果存在）
-            if not any(item.text() == "MA" for item in self.indicator_list.selectedItems()):
-                for row in range(self.indicator_list.rowCount()):
-                    for col in range(self.indicator_list.columnCount()):
-                        item = self.indicator_list.item(row, col)
-                        if item and item.text() == "MA":
-                            item.setSelected(True)
-                            break
 
         except Exception as e:
             logger.error(f"Failed to populate indicator list: {e}")
@@ -2782,16 +2786,19 @@ class LeftPanel(BasePanel):
             selected_indicators = self.get_selected_indicators()
             logger.info(f"指标参数已更新: {params}")
 
-            # 触发图表更新事件
-            if self.coordinator:
-                from core.events import ChartUpdateEvent
-                event = ChartUpdateEvent(
-                    stock_code=self._current_selected_stock or "",
-                    indicators=selected_indicators,
-                    chart_type="kline"
+            # R245 修复: 原发布 ChartUpdateEvent 并硬塞 data['indicator_params']（该事件无此字段，
+            # event_coordinator._on_chart_updated 只打日志）→ 改用 IndicatorChangedEvent（types.py L618-633
+            # 自带 indicator_params 字段），由 middle_panel.on_indicator_changed 消费合并用户参数
+            # R282: 补齐 coordinator.event_bus 判空（原仅判 coordinator，event_bus 为 None 时静默丢失）
+            if self.coordinator and self.coordinator.event_bus:
+                from core.events import IndicatorChangedEvent
+                event = IndicatorChangedEvent(
+                    selected_indicators=selected_indicators,
+                    indicator_params=params
                 )
-                event.data['indicator_params'] = params
                 self.coordinator.event_bus.publish(event)
+            else:
+                logger.warning("无法发布指标参数事件：协调器或事件总线不可用")
 
         except Exception as e:
             logger.error(f"处理指标参数变化失败: {e}", exc_info=True)

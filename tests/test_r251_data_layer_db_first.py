@@ -56,7 +56,9 @@ class TestDataLayerDBFirst(unittest.TestCase):
         udm = _build_udm()
         expected_df = _make_kdata_df(10)
 
-        with patch.object(udm, '_fetch_kdata_from_tet', return_value=expected_df) as mock_fetch:
+        # R290: R275 起 _fetch_kdata_from_tet 返回 (df, plugin_id) 元组契约，
+        # mock 需对齐生产契约，否则解包失败导致测试假失败。
+        with patch.object(udm, '_fetch_kdata_from_tet', return_value=(expected_df, 'test_plugin')) as mock_fetch:
             result = udm.get_kdata('000001', period='D', count=365, asset_type=AssetType.STOCK_A)
 
         # 插件补齐被调用一次
@@ -91,7 +93,7 @@ class TestDataLayerDBFirst(unittest.TestCase):
         """T03: 数据库与插件均无数据 → 返回空 DataFrame（不抛异常）"""
         udm = _build_udm()
 
-        with patch.object(udm, '_fetch_kdata_from_tet', return_value=pd.DataFrame()):
+        with patch.object(udm, '_fetch_kdata_from_tet', return_value=(pd.DataFrame(), None)):
             result = udm.get_kdata('000001', period='D', count=365)
 
         self.assertTrue(result.empty)
@@ -104,7 +106,7 @@ class TestDataLayerDBFirst(unittest.TestCase):
         udm.asset_manager.store_standardized_data = MagicMock(
             side_effect=Exception('duckdb write failure'))
 
-        with patch.object(udm, '_fetch_kdata_from_tet', return_value=expected_df):
+        with patch.object(udm, '_fetch_kdata_from_tet', return_value=(expected_df, 'test_plugin')):
             result = udm.get_kdata('000001', period='D', count=365)
 
         # 落库异常被吞掉，数据依然返回

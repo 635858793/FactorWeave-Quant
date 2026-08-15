@@ -276,9 +276,9 @@ class ExportMixin:
             if 'crosshair_enabled' in template_data:
                 self.crosshair_enabled = template_data['crosshair_enabled']
 
-            # 重新绘制图表
+            # 重新绘制图表（R267: 使用完整数据源）
             if hasattr(self, 'current_kdata') and self.current_kdata is not None:
-                self.update_chart({'kdata': self.current_kdata})
+                self.update_chart({'kdata': self._get_render_kdata() if hasattr(self, '_get_render_kdata') else self.current_kdata})
 
             logger.info(f"图表模板已加载: {file_path}")
             return True

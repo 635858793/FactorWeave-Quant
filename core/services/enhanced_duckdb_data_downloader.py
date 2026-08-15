@@ -369,7 +369,9 @@ class EnhancedDuckDBDataDownloader:
         end_date: datetime,
         strategy: DownloadStrategy = None,
         task_name: str = None,
-        progress_callback: callable = None
+        progress_callback: callable = None,
+        period: str = "D",
+        asset_type: AssetType = AssetType.STOCK_A
     ) -> Dict[str, Any]:
         """
         智能增量下载功能
@@ -380,6 +382,8 @@ class EnhancedDuckDBDataDownloader:
             strategy: 下载策略
             task_name: 任务名称
             progress_callback: 进度回调
+            period: 周期（标准 Period 值，如 'D'/'W'/'M'/'5m'/'1H'，默认日线）
+            asset_type: 资产类型（默认 A 股）
 
         Returns:
             Dict: 下载结果统计
@@ -447,7 +451,7 @@ class EnhancedDuckDBDataDownloader:
                 batch = download_plan.symbols_to_download[i:i + self.config['batch_size']]
 
                 batch_results = await self._download_symbol_batch(
-                    batch, download_plan.download_ranges, strategy
+                    batch, download_plan.download_ranges, strategy, period, asset_type
                 )
 
                 # 更新统计信息
@@ -547,15 +551,19 @@ class EnhancedDuckDBDataDownloader:
         self,
         symbols: List[str],
         download_ranges: Dict[str, Tuple[datetime, datetime]],
-        strategy: DownloadStrategy
+        strategy: DownloadStrategy,
+        period: str = "D",
+        asset_type: AssetType = AssetType.STOCK_A
     ) -> Dict[str, int]:
         """
         下载一批符号数据
 
         Args:
-            symbols: 符号列表
-            download_ranges: 下载范围
+            symbols: 股票符号列表
+            download_ranges: 下载范围字典
             strategy: 下载策略
+            period: 周期（标准 Period 值，默认日线）
+            asset_type: 资产类型（默认 A 股）
 
         Returns:
             Dict: 批下载结果
@@ -569,7 +577,7 @@ class EnhancedDuckDBDataDownloader:
         tasks = []
         for symbol in symbols:
             task = self._download_single_symbol(
-                symbol, download_ranges[symbol], strategy
+                symbol, download_ranges[symbol], strategy, period, asset_type
             )
             tasks.append(task)
 
@@ -602,7 +610,9 @@ class EnhancedDuckDBDataDownloader:
         self,
         symbol: str,
         download_range: Tuple[datetime, datetime],
-        strategy: DownloadStrategy
+        strategy: DownloadStrategy,
+        period: str = "D",
+        asset_type: AssetType = AssetType.STOCK_A
     ) -> Dict[str, int]:
         """
         下载单个符号数据
@@ -611,6 +621,8 @@ class EnhancedDuckDBDataDownloader:
             symbol: 股票符号
             download_range: 下载范围
             strategy: 下载策略
+            period: 周期（标准 Period 值，如 'D'/'W'/'M'/'5m'/'1H'，默认日线）
+            asset_type: 资产类型（默认 A 股）
 
         Returns:
             Dict: 下载结果
@@ -618,17 +630,21 @@ class EnhancedDuckDBDataDownloader:
         start_date, end_date = download_range
 
         try:
+            # R292 修复：period/asset_type 从调用方透传，不再硬编码日线 + A 股，
+            # 否则分钟/周/月线或非 A 股资产的增量任务按日线 frequency 落库
+            # 污染日线视图，或写入错误的数据库文件。
+            from ..plugin_types import Period as _PeriodCls
+            query_period = _PeriodCls.to_duckdb_frequency(period) if period else '1d'
             query = StandardQuery(
                 symbol=symbol,
                 data_type=DataType.HISTORICAL_KLINE,
-                asset_type=AssetType.STOCK_A,
+                asset_type=asset_type,
                 start_date=start_date,
                 end_date=end_date,
-                extra_params={'period': 'D'}
+                extra_params={'period': query_period}
             )
 
             if self.data_source_router:
-                data_source = self.data_source_router.get_best_data_source('HISTORICAL_KLINE')
                 context = await self.uni_plugin_manager.create_request_context(query)
                 data = await self._retry_async_with_backoff(
                     lambda ctx=context: self.uni_plugin_manager.execute_data_request(ctx),
@@ -655,7 +671,8 @@ class EnhancedDuckDBDataDownloader:
                 logger.warning(f"{symbol} 数据质量验证失败")
                 return {'records_count': 0}
 
-            records_count = await self._store_kline_data_incremental(cleaned_data, symbol, strategy)
+            records_count = await self._store_kline_data_incremental(
+                cleaned_data, symbol, strategy, period, asset_type)
 
             logger.info(f"下载并存储 {symbol} 数据: {records_count} 条")
 
@@ -668,7 +685,9 @@ class EnhancedDuckDBDataDownloader:
     async def download_incremental_update_all_data(
         self,
         days: int = 7,
-        progress_callback: callable = None
+        progress_callback: callable = None,
+        period: str = "D",
+        asset_type: AssetType = AssetType.STOCK_A
     ) -> Dict[str, Any]:
         """
         全量智能增量更新所有数据
@@ -676,6 +695,8 @@ class EnhancedDuckDBDataDownloader:
         Args:
             days: 回溯天数
             progress_callback: 进度回调
+            period: 周期（标准 Period 值，如 'D'/'W'/'M'/'5m'/'1H'，默认日线）
+            asset_type: 资产类型（默认 A 股）
 
         Returns:
             Dict: 更新结果统计
@@ -685,7 +706,7 @@ class EnhancedDuckDBDataDownloader:
 
         # 获取数据库中的所有股票代码
         try:
-            stock_df = await self._get_symbols_from_database()
+            stock_df = await self._get_symbols_from_database(asset_type)
             symbols = stock_df['code'].tolist() if not stock_df.empty else []
         except Exception as e:
             logger.error(f"获取股票列表失败: {e}")
@@ -707,7 +728,9 @@ class EnhancedDuckDBDataDownloader:
             end_date=end_date,
             strategy=DownloadStrategy.LATEST_ONLY,
             task_name=f"全量增量更新 - {days} 天",
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            period=period,
+            asset_type=asset_type
         )
 
     async def check_and_fill_data_gaps(
@@ -832,11 +855,21 @@ class EnhancedDuckDBDataDownloader:
         )
 
         if self.data_source_router:
-            data_source = self.data_source_router.get_best_data_source('HISTORICAL_KLINE')
-            if self.tet_pipeline:
-                data = await self.tet_pipeline.process_request(query, data_source)
+            # R275: 原 get_best_data_source 方法不存在（全局无定义）→ AttributeError；
+            # 改用 get_available_sources（含 R275 熔断过滤）取健康可用源
+            try:
+                available = self.data_source_router.get_available_sources(query)
+            except Exception:
+                available = []
+            data_source = available[0] if available else None
+            if data_source is None or not self.tet_pipeline:
+                if not self.tet_pipeline:
+                    raise RuntimeError("tet_pipeline 未配置")
+                # 无健康可用源：降级走插件管理器统一执行
+                context = await self.uni_plugin_manager.create_request_context(query)
+                data = await self.uni_plugin_manager.execute_data_request(context)
             else:
-                raise RuntimeError("tet_pipeline 未配置")
+                data = await self.tet_pipeline.process_request(query, data_source)
         else:
             # 通过插件管理器获取
             context = await self.uni_plugin_manager.create_request_context(query)
@@ -862,7 +895,8 @@ class EnhancedDuckDBDataDownloader:
         data: pd.DataFrame,
         symbol: str,
         strategy: DownloadStrategy,
-        period: str = "D"
+        period: str = "D",
+        asset_type: AssetType = AssetType.STOCK_A
     ) -> int:
         """
         智能增量存储K线数据
@@ -872,6 +906,7 @@ class EnhancedDuckDBDataDownloader:
             symbol: 股票符号
             strategy: 下载策略
             period: 周期 (标准 Period 值, 默认日线)
+            asset_type: 资产类型（默认 A 股）
 
         Returns:
             int: 存储的记录数
@@ -882,7 +917,9 @@ class EnhancedDuckDBDataDownloader:
         if 'datetime' in data.columns:
             data = data.sort_values('datetime')
 
-        db_path = self.asset_db_manager.get_database_path(AssetType.STOCK_A)
+        # R292 修复：db_path 使用传入的 asset_type，
+        # 此前硬编码 STOCK_A 导致非 A 股资产增量数据写入错误数据库文件。
+        db_path = self.asset_db_manager.get_database_path(asset_type)
 
         # R251 修复: 统一写入 historical_kline_data 表并完成列名映射,
         # 此前写入 kline_data_daily 表导致读取端(historical_kline_data)查不到数据
@@ -1075,6 +1112,20 @@ class EnhancedDuckDBDataDownloader:
                 return data if data is not None else pd.DataFrame()
 
             prepared = data.copy()
+
+            # R275: 兼容插件返回的 datetime 索引（东财/baostock 均 set_index('datetime')），
+            # 否则下方列映射/时间列检测全部落空 → 落库失败
+            if ('timestamp' not in prepared.columns
+                    and 'datetime' not in prepared.columns
+                    and 'date' not in prepared.columns
+                    and (isinstance(prepared.index, pd.DatetimeIndex)
+                         or prepared.index.name in ('datetime', 'date'))):
+                prepared = prepared.reset_index()
+                # R292 修复：无命名 DatetimeIndex reset_index 后新列为 'index'，
+                # 统一改名为 datetime（与 unified_data_manager._persist_kdata_to_duckdb 一致），
+                # 否则时间列检测落空 → 数据被静默丢弃（返回空 DataFrame）。
+                if 'index' in prepared.columns and 'datetime' not in prepared.columns:
+                    prepared = prepared.rename(columns={'index': 'datetime'})
 
             # 1. 列名统一映射: code→symbol, date/datetime→timestamp
             for src, dst in [('code', 'symbol'), ('date', 'timestamp'), ('datetime', 'timestamp')]:

@@ -21,6 +21,8 @@ R253 交叉验证回归测试: 实盘交易域 P0 修复
 - TradingPanel 构造测试: offscreen QApplication + patch UI 初始化方法
 - TradeWorker 同步执行: patch QThread.start 直接调用 run()
 - 本文件末尾恢复被 mock 污染的 sys.modules 条目
+- R272 治理: 模块级覆盖 sys.modules 前保存原真实模块引用, 文件末尾恢复真实模块
+  (而非 pop 移除), 消除后续文件类身份漂移
 """
 import os
 import sys
@@ -53,11 +55,24 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+# ---------------------------------------------------------------------------
+# R272 治理: sys.modules 覆盖前保存原真实模块引用, 末尾恢复真实模块
+# ---------------------------------------------------------------------------
+_ORIGINAL_MODULES: dict = {}
+
+
+def _install(name, mod):
+    """R272 治理: 覆盖 sys.modules 前保存原真实模块引用 (存在才保存)"""
+    if name in sys.modules and name not in _ORIGINAL_MODULES:
+        _ORIGINAL_MODULES[name] = sys.modules[name]
+    sys.modules[name] = mod
+
+
 def _make_mock_module(name: str) -> MagicMock:
     _m = MagicMock()
     _m.__name__ = name
     _m.__file__ = f'<mock:{name}>'
-    sys.modules[name] = _m
+    _install(name, _m)
     return _m
 
 
@@ -67,7 +82,7 @@ def _load_module_from_file(module_name: str, rel_path: str):
     spec = importlib.util.spec_from_file_location(
         module_name, os.path.join(ROOT, rel_path))
     module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
+    _install(module_name, module)
     spec.loader.exec_module(module)
     return module
 
@@ -314,13 +329,19 @@ class TestP1CFallbackPath(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 恢复被 mock 污染的 sys.modules 条目 (同 R252 交叉审查教训)
+# R272 治理: 恢复真实模块 (而非 pop 移除) — 消除后续文件类身份漂移
 # ---------------------------------------------------------------------------
-for _mod_name in ('core.trading.order_repository',
-                  'core.trading.account_repository',
-                  'core.trading.account_manager',
-                  'gui.widgets.trading_panel'):
-    sys.modules.pop(_mod_name, None)
+_ALL_INJECTED_NAMES = (
+    'core.trading.order_repository',
+    'core.trading.account_repository',
+    'core.trading.account_manager',
+    'gui.widgets.trading_panel',
+)
+for _name, _orig in _ORIGINAL_MODULES.items():
+    sys.modules[_name] = _orig
+for _name in _ALL_INJECTED_NAMES:
+    if _name not in _ORIGINAL_MODULES:
+        sys.modules.pop(_name, None)
 
 
 if __name__ == '__main__':

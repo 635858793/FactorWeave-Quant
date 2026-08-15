@@ -1534,9 +1534,23 @@ class UnifiedDataManagementDialog(BaseDialog):
     
     def _check_data_quality(self):
         try:
+            # R278 数据治理：改走 DI 单例 + 真实数据样本评估。
+            # 原实现直接 new 且无参调用 assess_quality() → DataQualityMonitor 对
+            # None 返回固定 0.7 分 / 默认 90 分占位，质量面板数字失真。
+            from core.containers import get_service_container
             from core.data_quality_risk_manager import DataQualityRiskManager
-            quality_manager = DataQualityRiskManager()
-            report = quality_manager.assess_quality()
+            quality_manager = get_service_container().resolve(DataQualityRiskManager)
+
+            sample_df = self._get_quality_sample_data()
+            if sample_df is None or sample_df.empty:
+                self.quality_progress.setValue(0)
+                QMessageBox.information(self, "质量检查", "数据库中暂无K线数据可评估，请先导入/获取数据后再检查")
+                return
+
+            report = quality_manager.assess_quality(
+                sample_df, 'kline',
+                {'source': 'data_management_dialog', 'sample_rows': len(sample_df)}
+            )
             score = report.get('quality_score', 0)
             self.quality_progress.setValue(int(score))
             self.quality_progress.setStyleSheet(self.quality_progress.styleSheet().replace(
@@ -1546,11 +1560,11 @@ class UnifiedDataManagementDialog(BaseDialog):
 
             self.quality_table.setRowCount(0)
             checks = [
-                ("完整性", report.get('completeness', 90), report.get('completeness_issues', 0), "数据字段是否完整"),
-                ("准确性", report.get('accuracy', 90), report.get('accuracy_issues', 0), "数据值是否在合理范围"),
-                ("时效性", report.get('timeliness', 90), report.get('timeliness_issues', 0), "数据是否及时更新"),
-                ("一致性", report.get('consistency', 90), report.get('consistency_issues', 0), "多数据源数据是否一致"),
-                ("唯一性", report.get('uniqueness', 90), report.get('uniqueness_issues', 0), "是否存在重复数据"),
+                ("完整性", report.get('completeness', 0), report.get('issues', 0), "数据字段是否完整"),
+                ("准确性", report.get('accuracy', 0), report.get('issues', 0), "数据值是否在合理范围"),
+                ("时效性", report.get('timeliness', 0), report.get('issues', 0), "数据是否及时更新"),
+                ("一致性", report.get('consistency', 0), report.get('issues', 0), "多数据源数据是否一致"),
+                ("唯一性", report.get('uniqueness', 0), report.get('issues', 0), "是否存在重复数据"),
             ]
 
             for check_name, check_score, issues, detail in checks:
@@ -1562,24 +1576,59 @@ class UnifiedDataManagementDialog(BaseDialog):
                 self.quality_table.setItem(row, 2, QTableWidgetItem(str(issues)))
                 self.quality_table.setItem(row, 3, QTableWidgetItem(detail))
 
-            QMessageBox.information(self, "质量检查", f"数据质量检查完成，综合评分: {score:.0f}分")
+            QMessageBox.information(
+                self, "质量检查",
+                f"数据质量检查完成，综合评分: {score:.0f}分（样本: {len(sample_df)} 条K线）")
         except Exception as e:
             logger.warning(f"数据质量检查失败: {e}")
             self.quality_progress.setValue(0)
             QMessageBox.warning(self, "质量检查", f"数据质量检查失败: {e}")
-    
-    def _fix_data_issues(self):
-        """修复数据问题（当前为诊断模式，输出质量报告与建议）"""
+
+    def _get_quality_sample_data(self):
+        """R278：从数据库读取数据量最大的 symbol 的最近 K 线样本用于真实质量评估"""
         try:
+            from core.asset_database_manager import get_asset_separated_database_manager
+            from core.plugin_types import AssetType
+            asset_manager = get_asset_separated_database_manager()
+            with asset_manager.get_connection(AssetType.STOCK_A) as conn:
+                sample = conn.execute(
+                    """
+                    SELECT * FROM historical_kline_data
+                    WHERE symbol = (
+                        SELECT symbol FROM historical_kline_data
+                        GROUP BY symbol ORDER BY COUNT(*) DESC LIMIT 1
+                    )
+                    ORDER BY timestamp DESC LIMIT 1000
+                    """
+                ).df()
+                return sample
+        except Exception as e:
+            logger.debug(f"读取质量样本失败: {e}")
+            return None
+
+    def _fix_data_issues(self):
+        """修复数据问题（当前为诊断模式，基于真实数据输出质量报告与建议）"""
+        try:
+            # R278 数据治理：改走 DI 单例 + 真实数据样本评估（原实现无参 assess_quality 占位失真）
+            from core.containers import get_service_container
             from core.data_quality_risk_manager import DataQualityRiskManager
-            quality_manager = DataQualityRiskManager()
-            report = quality_manager.assess_quality()
+            quality_manager = get_service_container().resolve(DataQualityRiskManager)
+
+            sample_df = self._get_quality_sample_data()
+            if sample_df is None or sample_df.empty:
+                QMessageBox.information(self, "数据问题诊断", "数据库中暂无K线数据可评估，请先导入/获取数据")
+                return
+
+            report = quality_manager.assess_quality(
+                sample_df, 'kline',
+                {'source': 'data_management_dialog', 'sample_rows': len(sample_df)}
+            )
             score = report.get('quality_score', 0)
             issues = report.get('issues', 0)
             recommendations = report.get('recommendations', [])
 
             lines = [
-                f"数据质量综合评分: {score} 分",
+                f"数据质量综合评分: {score} 分（样本: {len(sample_df)} 条K线）",
                 f"待处理问题数量: {issues} 个",
             ]
             if recommendations:

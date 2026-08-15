@@ -19,7 +19,6 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from core.config import ConfigManager
 from utils.theme import parse_color_for_matplotlib
 from ..async_data_processor import AsyncDataProcessor
-from ..chart_renderer import ChartRenderer
 
 THEME_MANAGER_AVAILABLE = False
 get_theme_manager = None

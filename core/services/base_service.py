@@ -128,6 +128,15 @@ class BaseService(ABC):
 
             logger.info(f"Service {self._name} initialized successfully in {self._initialization_time:.3f}s")
 
+            # R292 修复: 服务生命周期事件先注册再发布, 消除启动期
+            # "[EventBus] 未注册事件 publish" 警告刷屏 (R8 §8.1 铁律 #1)。
+            # register_event_type 幂等, 动态覆盖所有当前及未来 BaseService 子类,
+            # 避免在 service_bootstrap.ORPHAN_EVENT_TYPES 维护静态清单漏项。
+            self._event_bus.register_event_type(
+                f"service.{self._name}.initialized", source='base_service_lifecycle')
+            self._event_bus.register_event_type(
+                f"service.{self._name}.initialization_failed", source='base_service_lifecycle')
+
             # 发送初始化成功事件
             self._event_bus.publish(f"service.{self._name}.initialized",
                                     service_id=self._service_id,

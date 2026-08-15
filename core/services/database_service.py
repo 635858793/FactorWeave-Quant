@@ -25,12 +25,10 @@ from loguru import logger
 
 from .base_service import BaseService
 from .db_utils import configure_connection
-from ..database.duckdb_manager import DuckDBConnectionManager
-from ..database.duckdb_operations import DuckDBOperations
+# R292: DuckDBConnectionManager / DuckDBOperations import 已删除 —
+# _duckdb_manager 与 _duckdb_operations 冗余实例均已清理 (业务走 get_connection_manager() /
+# get_duckdb_operations() 模块级单例)
 from ..database.sqlite_extensions import SQLiteExtensionManager
-from ..database.duckdb_performance_optimizer import (
-    DuckDBPerformanceOptimizer, WorkloadType, DuckDBConfig
-)
 from ..asset_database_manager import AssetSeparatedDatabaseManager
 # from ..enhanced_asset_database_manager import EnhancedAssetDatabaseManager  # 已集成到DatabaseService
 from ..database.factorweave_analytics_db import FactorWeaveAnalyticsDB
@@ -425,8 +423,6 @@ class DatabaseService(BaseService):
         self._service_container = service_container or get_service_container()
 
         # 核心组件
-        self._duckdb_manager: Optional[DuckDBConnectionManager] = None
-        self._duckdb_operations: Optional[DuckDBOperations] = None
         self._sqlite_manager: Optional[SQLiteExtensionManager] = None
         self._asset_db_manager: Optional[AssetSeparatedDatabaseManager] = None
         # self._enhanced_asset_manager: Optional[EnhancedAssetDatabaseManager] = None  # 已集成
@@ -440,9 +436,6 @@ class DatabaseService(BaseService):
         
         # 自适应连接池管理器（支持多个连接池）
         self._adaptive_managers: Dict[str, 'AdaptiveConnectionPoolManager'] = {}
-
-        # 性能优化器
-        self._performance_optimizers: Dict[str, DuckDBPerformanceOptimizer] = {}
 
         # 事务管理
         self._active_transactions: Dict[str, TransactionMetrics] = {}
@@ -562,10 +555,7 @@ class DatabaseService(BaseService):
         try:
             logger.info("Initializing DatabaseService core components...")
 
-            # 1. 初始化DuckDB管理器
-            self._initialize_duckdb_managers()
-
-            # 2. 初始化SQLite管理器
+            # 1. 初始化SQLite管理器
             self._initialize_sqlite_managers()
 
             # 3. 初始化资产数据库管理器
@@ -589,34 +579,16 @@ class DatabaseService(BaseService):
             # 10. 初始化交易账户相关数据表
             self._initialize_trade_account_tables()
 
-            # 11. 初始化性能优化器
-            self._initialize_performance_optimizers()
-
-            # 12. 启动后台任务
+            # 11. 启动后台任务
             self._start_background_tasks()
 
-            # 13. 验证数据库连接
+            # 12. 验证数据库连接
             self._validate_database_connections()
 
             logger.info("DatabaseService initialized successfully with full database management capabilities")
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize DatabaseService: {e}")
-            raise
-
-    def _initialize_duckdb_managers(self) -> None:
-        """初始化DuckDB管理器"""
-        try:
-            # 创建DuckDB连接管理器
-            self._duckdb_manager = DuckDBConnectionManager()
-
-            # 创建DuckDB操作器
-            self._duckdb_operations = DuckDBOperations()
-
-            logger.info("✓ DuckDB managers initialized")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize DuckDB managers: {e}")
             raise
 
     def _initialize_sqlite_managers(self) -> None:
@@ -714,14 +686,6 @@ class DatabaseService(BaseService):
         except Exception as e:
             logger.error(f"Failed to initialize order databases: {e}")
             raise
-
-    def _initialize_performance_optimizers(self) -> None:
-        """初始化性能优化器（临时禁用 - v2.2架构修复）"""
-        try:
-            logger.info(f"Performance optimizers initialization skipped (architecture refactoring planned for v2.2)")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize performance optimizers: {e}")
 
     def _start_background_tasks(self) -> None:
         """启动后台任务"""

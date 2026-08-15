@@ -160,7 +160,8 @@ class FactorWeaveQuantApplication:
 
         # 设置应用程序图标
         icon_path = project_root / "icons" / "logo.png"
-        if icon_path.exists():
+        # R292: QIcon 可能为 None (QtGui 导入失败时 L50), 防 TypeError
+        if icon_path.exists() and QIcon is not None:
             self.app.setWindowIcon(QIcon(str(icon_path)))
 
         # 初始化全局字体管理器（字体缩放功能）
@@ -345,7 +346,8 @@ class FactorWeaveQuantApplication:
         if self.app:
             QMessageBox.critical(None, title, message)
         else:
-            logger.info(f"错误: {title} - {message}")
+            # R292: 无 GUI 时错误必须用 error 级别 (原为 info, 启动失败信息被淹没)
+            logger.error(f"错误: {title} - {message}")
 
 
 def main():
@@ -404,7 +406,8 @@ def main():
             logger.info("QApplication实例创建完成")
 
             icon_path = project_root / "icons" / "logo.png"
-            if icon_path.exists():
+            # R292: QIcon 可能为 None (QtGui 导入失败时 L50), 防 TypeError
+            if icon_path.exists() and QIcon is not None:
                 app.setWindowIcon(QIcon(str(icon_path)))
                 logger.info("应用程序图标已设置")
             else:
@@ -514,8 +517,9 @@ def main():
             sys.exit(1)
 
     except Exception as e:
-        logger.info(f"程序启动失败: {e}")
-        logger.info(traceback.format_exc())
+        # R292: 启动失败用 error 级别记录 (原为 info, 掩盖异常严重性)
+        logger.error(f"程序启动失败: {e}")
+        logger.error(traceback.format_exc())
         sys.exit(1)
 
 

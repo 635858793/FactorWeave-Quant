@@ -1750,9 +1750,12 @@ class TechnicalAnalysisTab(BaseAnalysisTab):
             params_config = get_indicator_params_config(english_name)
             if not params_config:
                 return {}
-            
+
             params = {}
-            for param_name, param_info in params_config.items():
+            # R245 修复：get_indicator_params_config 返回顶层 dict（name/display_name/description/params），
+            # 参数列表在 params_config['params'] 中（原代码遍历顶层键 → 恒空 dict，参数 UI 读取失效）
+            indicator_params = params_config.get('params', {}) or {}
+            for param_name, param_info in indicator_params.items():
                 if param_name in self.param_controls:
                     control = self.param_controls[param_name]
                     if isinstance(control, QSpinBox):

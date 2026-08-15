@@ -35,18 +35,6 @@ from .chart_mixins import (
     SignalMixin, ExportMixin, UtilityMixin
 )
 from core.events import PatternSignalsDisplayEvent
-# 从专门的文件导入ChartRenderer相关组件
-from .chart_renderer import ChartRenderer
-try:
-    from .chart_renderer import RenderPriority
-except ImportError:
-    # 如果没有RenderPriority，创建一个简单的枚举
-    from enum import IntEnum
-
-    class RenderPriority(IntEnum):
-        LOW = 1
-        NORMAL = 2
-        HIGH = 3
 import traceback
 from collections import deque
 from typing import Optional, List, Dict, Any
@@ -75,11 +63,11 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
     chart_updated = pyqtSignal(dict)  # 图表更新信号
     error_occurred = pyqtSignal(str)  # 错误信号
     zoom_changed = pyqtSignal(float)  # 缩放变更信号
-    request_indicator_dialog = pyqtSignal()
     request_stat_dialog = pyqtSignal(tuple)  # (start_idx, end_idx)
     pattern_selected = pyqtSignal(int)  # 新增：主图高亮信号，参数为K线索引
     chart_type_changed = pyqtSignal(str)  # 新增：图表类型变更信号
     time_range_changed = pyqtSignal(str)  # 新增：时间范围变更信号
+    region_indicator_selected = pyqtSignal(str, object)  # R283+: (region, indicator_names: list) 指标区菜单多选指标
 
     # 渐进式加载信号
     progressive_loading_progress = pyqtSignal(int, str)  # 进度, 阶段名称
@@ -685,6 +673,20 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                     logger.error(f"不支持的K线数据类型: {type(kdata)}")
                 return
 
+            # R267: 完整数据源与渲染数据同步（增量推送路径不走update_chart，需在此保存完整数据）
+            self._full_kdata = self.current_kdata
+
+            # R292 B3：形态防御——增量推送/缓存等路径可能偶发传入索引形态
+            # （datetime 在索引而非列），若不加处理，下方会走数字索引X轴 +
+            # 渲染器 date2num(索引) 画蜡烛 → 蜡烛数值约 73 万级出视野，
+            # 表现为偶发数据范围/展示错乱。此处统一还原为 datetime 列 + 数字索引。
+            if 'datetime' not in self.current_kdata.columns and isinstance(
+                    self.current_kdata.index, pd.DatetimeIndex):
+                self.current_kdata['datetime'] = self.current_kdata.index
+                self.current_kdata = self.current_kdata.reset_index(drop=True)
+                self._full_kdata = self.current_kdata
+                logger.info("R292防御: 检测到datetime在索引，已还原为列")
+
             # 获取样式
             style = self._get_chart_style()
             if True:  # 使用Loguru日志
@@ -725,25 +727,30 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
             if True:  # 使用Loguru日志
                 logger.info(f"设置Y轴范围: {ymin - margin} - {ymax + margin}")
 
-            # 修复：X轴范围设置
-            if not use_datetime_axis:
-                # 数字索引X轴：手动设置范围
-                self.price_ax.set_xlim(0, len(self.current_kdata) - 1)
-            else:
-                # datetime X轴：显式设置X轴范围，确保K线图正确显示
+            # R292 修复：X轴范围必须与渲染器蜡烛坐标一致。
+            # 渲染器（GPU arange / CPU fallback）均以 0~N-1 序号画蜡烛，
+            # 此前此处对 datetime 轴设置 mdates.date2num（约 73 万级）的 xlim，
+            # 与蜡烛坐标完全错位 → 渐进式加载路径 K 线不可见/展示错乱。
+            # 统一为数字序号范围，并按 _safe_format_date 生成日期刻度标签。
+            n = len(self.current_kdata)
+            self.price_ax.set_xlim(-0.5, n - 0.5)
+            if use_datetime_axis:
                 try:
-                    # 导入matplotlib.dates
-                    import matplotlib.dates as mdates
-                    datetime_series = pd.to_datetime(self.current_kdata['datetime'])
-                    x_min = mdates.date2num(datetime_series.min())
-                    x_max = mdates.date2num(datetime_series.max())
-                    # 添加2%边距，确保K线图完全可见
-                    margin = (x_max - x_min) * 0.04 if x_max > x_min else 1.0
-                    self.price_ax.set_xlim(x_min - margin, x_max + margin)
-                    logger.debug(f"datetime X轴范围已设置: {datetime_series.min()} ~ {datetime_series.max()}")
+                    step = max(1, n // 8)
+                    xticks = np.arange(0, n, step)
+                    xticklabels = [self._safe_format_date(
+                        self.current_kdata.iloc[i], i, self.current_kdata) for i in xticks]
+                    self.price_ax.set_xticks(xticks)
+                    if len(xticks) == len(xticklabels):
+                        self.price_ax.set_xticklabels(
+                            xticklabels, rotation=30, fontsize=8)
+                    else:
+                        min_len = min(len(xticks), len(xticklabels))
+                        self.price_ax.set_xticks(xticks[:min_len])
+                        self.price_ax.set_xticklabels(
+                            xticklabels[:min_len], rotation=30, fontsize=8)
                 except Exception as e:
-                    logger.warning(f"⚠️ 设置datetime X轴范围失败: {e}，使用autoscale_view()")
-                    # 失败时使用autoscale_view()作为后备
+                    logger.warning(f"⚠️ 设置X轴日期标签失败: {e}，使用autoscale_view()")
                     self.price_ax.autoscale_view()
 
             # 更新画布

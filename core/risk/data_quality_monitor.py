@@ -410,8 +410,14 @@ class DataQualityMonitor:
                             consistency_score *= 0.9
             
             # 检查时间序列一致性
+            # R285 修复：落库侧列名为 timestamp（historical_kline_data），原仅检查
+            # 'datetime' 导致一致性检查对落库数据恒跳过 → consistency 恒 1.0 失真。
+            time_col = None
             if 'datetime' in df.columns or df.index.name == 'datetime':
                 time_col = df.index if df.index.name == 'datetime' else df['datetime']
+            elif 'timestamp' in df.columns:
+                time_col = df['timestamp']
+            if time_col is not None:
                 if len(time_col) > 1:
                     # 检查时间间隔一致性
                     time_diffs = time_col.diff().dropna()
@@ -458,6 +464,12 @@ class DataQualityMonitor:
                     latest_time = df[col].max()
                     if pd.notna(latest_time):
                         time_diff = (current_time - pd.to_datetime(latest_time)).total_seconds()
+                        # R285 修复：历史回填豁免——落库评估（backfill=True）时，K线
+                        # 最新交易日早于当天是历史补齐/增量回填的正常状态（如场景B 拉
+                        # 更早历史），原逻辑按时间差剧烈降分（>600s 即归 0）会把合法
+                        # 的历史回填数据判为"质量极差"，污染质量优选。回填场景给中性分。
+                        if context.get('backfill'):
+                            return 0.8
                         return 1.0 - min(time_diff / self.thresholds.timeliness_critical, 1.0)
             
             # 默认时效性评分

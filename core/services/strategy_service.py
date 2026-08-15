@@ -235,7 +235,11 @@ class StrategyService(BaseService):
 
         # 初始化
         self._load_strategy_plugins()
-        self._load_strategy_configs()
+        # R292 修复: 删除 __init__ 中的 _load_strategy_configs() 重复调用 —
+        # _do_initialize (L326) 会再次加载, 导致 StrategyConfigsLoadedEvent
+        # 11ms 内双发布 (第二次被 event_bus 0.5s 去重窗口吞掉) + 冗余 DB 查询。
+        # resolve(StrategyService) (service_bootstrap:1708) 后立即 initialize(),
+        # 中间无 _strategy_configs 读取, 删除安全。
         self._load_builtin_templates()
         self._load_builtin_groups()
         

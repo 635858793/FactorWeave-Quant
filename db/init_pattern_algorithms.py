@@ -16,14 +16,8 @@ def init_pattern_algorithms():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # 首先添加algorithm_code和parameters字段到pattern_types表
-    try:
-        cursor.execute(
-            'ALTER TABLE pattern_types ADD COLUMN algorithm_code TEXT')
-        cursor.execute('ALTER TABLE pattern_types ADD COLUMN parameters TEXT')
-    except sqlite3.OperationalError:
-        # 字段已存在
-        pass
+    # 注：pattern_types 建表（unified_indicator_service / complete_database_init）均已含
+    # algorithm_code/parameters 列，无需 ALTER TABLE
 
     # 定义所有形态的算法代码
     algorithms = {
@@ -49,7 +43,9 @@ for i in range(max_process_length):
     lower_ratio = lower_shadow / total_range
     
     # 锤头线特征：小实体，几乎没有上影线，长下影线
-    if (body_ratio < 0.3 and upper_ratio < 0.1 and lower_ratio > 0.6):
+    # R245: 阈值与 Track1 内置 _detect_hammer (pattern_recognition.py _detect_hammer) 统一:
+    # 下影线 > 2.0 * 实体、上影线 < 0.2 * 实体 (原 absolute 区间式 lower_ratio>0.6 偏严, 偏离 TA-Lib ShadowVeryLong)
+    if (body_ratio < 0.3 and upper_shadow < body_size * 0.2 and lower_shadow > 2.0 * body_size and total_range > 0):
         confidence = min(0.9, lower_ratio * 0.8 + (0.3 - body_ratio) * 0.5 + (0.1 - upper_ratio) * 0.3)
         
         datetime_val = str(kdata.iloc[i]['datetime']) if 'datetime' in kdata.columns else None
@@ -69,13 +65,14 @@ for i in range(max_process_length):
         )
         results.append(result)
 ''',
-            'parameters': '{"min_body_ratio": 0.3, "max_upper_ratio": 0.1, "min_lower_ratio": 0.6}'
+            'parameters': '{"min_body_ratio": 0.3, "max_upper_shadow_ratio": 0.2, "min_lower_shadow_ratio": 2.0}'
         },
 
         'doji': {
             'code': '''
 # 十字星识别算法
 max_process_length = min(len(kdata), 1000)
+prev_body_ratio = 0.0
 for i in range(max_process_length):
     k = kdata.iloc[i]
     
@@ -83,12 +80,14 @@ for i in range(max_process_length):
     total_range = k['high'] - k['low']
     
     if total_range == 0:
+        prev_body_ratio = 0.0
         continue
     
     body_ratio = body_size / total_range
     
-    # 实体占比小于10%认为是十字星
-    if body_ratio < 0.1:
+    # 实体占比小于10%且前一根实体大于30%认为是十字星
+    # R245: 与 Track1 内置 _detect_doji（pattern_recognition.py L494-499）统一，追加前一根上下文
+    if body_ratio < 0.1 and (i == 0 or prev_body_ratio > 0.3):
         confidence = min(0.9, (0.1 - body_ratio) / 0.1 * 0.9 + 0.5)
         
         datetime_val = str(kdata.iloc[i]['datetime']) if 'datetime' in kdata.columns else None
@@ -107,8 +106,9 @@ for i in range(max_process_length):
             }
         )
         results.append(result)
+    prev_body_ratio = body_ratio
 ''',
-            'parameters': '{"max_body_ratio": 0.1}'
+            'parameters': '{"max_body_ratio": 0.1, "min_prev_body_ratio": 0.3}'
         },
 
         'shooting_star': {
@@ -558,7 +558,14 @@ try:
                 
                 # 数据完整性检查
                 required_fields = ['open', 'high', 'low', 'close']
-                if not all(field in k0 and field in k1 and field in k2 for field in required_fields):
+                # R245: 原 all(... for field ...) genexpr 在 exec 分离命名空间下无法访问
+                # 循环局部变量 k0/k1/k2 (NameError)，改为显式循环
+                fields_ok = True
+                for field in required_fields:
+                    if field not in k0 or field not in k1 or field not in k2:
+                        fields_ok = False
+                        break
+                if not fields_ok:
                     continue
                     
                 # 价格有效性检查
@@ -807,8 +814,21 @@ for i in range(2, max_process_length):
         }
     }
 
-    # 更新数据库中的算法代码
+    # 更新数据库中的算法代码（先确保形态记录存在，再写算法，避免依赖外部种子化脚本的执行次序）
+    # 信号类型与 core/unified_indicator_service._SEED_PATTERNS 约定一致
+    pattern_signal_types = {
+        'hammer': 'buy', 'inverted_hammer': 'buy', 'bullish_engulfing': 'buy',
+        'piercing_pattern': 'buy', 'three_white_soldiers': 'buy', 'morning_star': 'buy',
+        'shooting_star': 'sell', 'hanging_man': 'sell', 'bearish_engulfing': 'sell',
+        'dark_cloud_cover': 'sell', 'three_black_crows': 'sell', 'evening_star': 'sell',
+    }
     for pattern_name, algorithm_data in algorithms.items():
+        signal_type = pattern_signal_types.get(pattern_name, 'neutral')
+        cursor.execute('''
+            INSERT OR IGNORE INTO pattern_types 
+            (name, english_name, category, signal_type, description) 
+            VALUES (?, ?, ?, ?, ?)
+        ''', (pattern_name, pattern_name, 'K线形态', signal_type, pattern_name))
         cursor.execute('''
             UPDATE pattern_types 
             SET algorithm_code = ?, parameters = ?

@@ -15,16 +15,21 @@
 
 import sys
 import os
+import json
+import sqlite3
 import unittest
 from datetime import datetime
 from typing import List, Dict, Any
 
 from loguru import logger
 
+from core.services.database_service import DatabaseService
 from core.trading.order_models import (
     Order, OrderRequest, OrderQuery, OrderType, OrderStatus, OrderCategory,
     OrderFill
 )
+from core.plugin_types import AssetType
+from core.trading.trading_types import ExecutionStatus
 from core.trading.order_service import OrderService
 from core.trading.order_repository import OrderRepository
 from core.trading.order_executor import OrderExecutor
@@ -34,6 +39,135 @@ from core.trading.order_analyzer import OrderAnalyzer
 from core.containers import get_service_container
 from core.containers.service_registry import ServiceScope
 from core.events import get_event_bus
+
+
+class _InMemoryDatabaseService:
+    """测试专用内存版 DatabaseService (替代生产 sqlite/duckdb 实现)
+
+    背景: OrderRepository 各方法内部 resolve(DatabaseService) 获取服务
+    (core/trading/order_repository.py L70/L178/L276/L365/L487/L531/L646/
+    L684/L710/L748 共 10 处), 生产环境由 core/services/service_bootstrap.py
+    注册真实实现 (依赖 data/factorweave_system.sqlite 等生产 DB 文件),
+    测试环境不应依赖生产 DB, 故在此注册内存版 fake。
+
+    仓库仅调用两个方法 (均已实现):
+      - execute_query(sql, params, pool_name=...): INSERT/UPDATE/DELETE
+      - fetch_all(sql, params, pool_name=...):   SELECT -> List[dict]
+    按 pool_name 隔离内存库, 与生产 AssetSeparatedDatabaseManager
+    "订单按资产类型落不同数据池, 跨池查询遍历合并" 语义一致。
+    """
+
+    _SCHEMA_SQL = """
+    CREATE TABLE IF NOT EXISTS orders (
+        order_id TEXT PRIMARY KEY,
+        strategy_id TEXT, asset_type TEXT, stock_code TEXT,
+        order_type TEXT, order_category TEXT,
+        order_price REAL, order_quantity INTEGER,
+        order_status TEXT, create_time TEXT, update_time TEXT, execute_time TEXT,
+        filled_quantity INTEGER, filled_price REAL, commission REAL,
+        error_message TEXT, error_code TEXT, stop_price REAL,
+        user_id TEXT, account_id TEXT, tags TEXT, metadata TEXT,
+        contract_multiplier REAL, margin_ratio REAL, strike_price REAL,
+        expiry_date TEXT, option_type TEXT
+    );
+    CREATE TABLE IF NOT EXISTS order_fills (
+        fill_id TEXT PRIMARY KEY,
+        order_id TEXT, stock_code TEXT, fill_price REAL,
+        fill_quantity INTEGER, fill_time TEXT, commission REAL
+    );
+    """
+
+    def __init__(self):
+        self._connections = {}
+
+    def reset(self):
+        """清空所有数据池 (每个测试用例独立, 避免跨用例数据累积)"""
+        for conn in self._connections.values():
+            conn.close()
+        self._connections = {}
+
+    def _get_connection(self, pool_name: str):
+        if pool_name not in self._connections:
+            conn = sqlite3.connect(':memory:')
+            conn.row_factory = sqlite3.Row
+            conn.executescript(self._SCHEMA_SQL)
+            self._connections[pool_name] = conn
+        return self._connections[pool_name]
+
+    @staticmethod
+    def _serialize_params(params):
+        """dict/list 参数序列化为 JSON 字符串 (Order.to_dict 的 metadata/tags 为 dict/list)"""
+        if not params:
+            return params
+        return [
+            json.dumps(p, ensure_ascii=False) if isinstance(p, (dict, list)) else p
+            for p in params
+        ]
+
+    def execute_query(self, sql: str, params=None, pool_name: str = None):
+        conn = self._get_connection(pool_name or 'default')
+        with conn:
+            conn.execute(sql, self._serialize_params(params or []))
+
+    def fetch_all(self, sql: str, params=None, pool_name: str = None) -> List[Dict[str, Any]]:
+        conn = self._get_connection(pool_name or 'default')
+        cursor = conn.execute(sql, self._serialize_params(params or []))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+class _FakeAccountManager:
+    """测试专用轻量 AccountManager (R272: executor 非防御 resolve 依赖)
+
+    背景: OrderExecutor 在测试环境用真实容器 resolve(AccountManager) (order_executor.py
+    L710/L836/L1743/L1758 共 4 处), 未注册会抛 ValueError → 风控拒绝 / 账号解析失败
+    (test_05/06/07 失败的 ACCOUNT_NOT_FOUND 根因)。生产环境由 service_bootstrap
+    注册真实 AccountManager (依赖账户 DB), 测试侧注册轻量 fake 仅暴露 executor
+    消费的 3 个方法: get_account / get_all_accounts / get_account_positions。
+    """
+    def __init__(self):
+        from types import SimpleNamespace
+        # 提供可用资金, 通过 executor._pre_trade_risk_check 资金校验 (:838-851);
+        # 无 position_limit → 跳过持仓数量检查 (:853-859)
+        self._accounts = {
+            'test_account': SimpleNamespace(
+                account_id='test_account',
+                available_cash=1_000_000.0,
+                available_balance=1_000_000.0,
+                balance=1_000_000.0,
+                position_limit=None,
+            )
+        }
+
+    def get_account(self, account_id: str):
+        return self._accounts.get(account_id)
+
+    def get_all_accounts(self) -> List:
+        return list(self._accounts.values())
+
+    def get_account_positions(self, account_id: str) -> List:
+        return []
+
+
+class _FakeStrategyManager:
+    """测试专用轻量 StrategyManager (executor:711 resolve + :723 get_strategy;
+    order_service.create_order :158-165 get_strategy/get_all_strategies)
+
+    必须返回带 strategy_id 的策略对象: 若 get_strategy 返回 None, create_order
+    会认为策略无效并把 strategy_id 重置为 'default' (order_service.py:158-165),
+    导致按 'test_strategy' 查询不到订单。
+    """
+    def __init__(self):
+        from types import SimpleNamespace
+        self._strategies = {
+            'test_strategy': SimpleNamespace(
+                strategy_id='test_strategy', default_account_id=None),
+        }
+
+    def get_strategy(self, strategy_id: str):
+        return self._strategies.get(strategy_id)
+
+    def get_all_strategies(self) -> List:
+        return list(self._strategies.values())
 
 
 class TestOrderManagementIntegration(unittest.TestCase):
@@ -47,6 +181,19 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 获取服务容器和事件总线
         cls.service_container = get_service_container()
         cls.event_bus = get_event_bus()
+
+        # R272: 接线 DatabaseService (测试环境不依赖生产 DB 文件)
+        # OrderRepository 各方法内部 resolve(DatabaseService), 生产环境由
+        # service_bootstrap 注册真实实现; 测试侧注册内存版 fake, 必须在
+        # OrderService 注册/解析及清理测试数据之前完成。
+        if not cls.service_container.is_registered(DatabaseService):
+            cls.database_service_mock = _InMemoryDatabaseService()
+            cls.service_container.register(
+                DatabaseService,
+                scope=ServiceScope.SINGLETON,
+                factory=lambda: cls.database_service_mock
+            )
+            logger.info("DatabaseService (内存 mock) 已注册到服务容器")
 
         # 注册订单服务
         if not cls.service_container.is_registered(OrderService):
@@ -62,6 +209,48 @@ class TestOrderManagementIntegration(unittest.TestCase):
 
         # 获取订单服务
         cls.order_service = cls.service_container.resolve(OrderService)
+
+        # R272: 接线 AccountManager/StrategyManager (executor 非防御 resolve 依赖)
+        # OrderExecutor 在测试环境用真实容器 resolve(AccountManager/StrategyManager)
+        # (order_executor.py L710/L711/L836/L1743/L1758), 未注册 → ValueError →
+        # 风控拒绝 / 账号解析失败 (test_05/06/07 的 ACCOUNT_NOT_FOUND/MODE_BLOCKED)。
+        # 生产环境由 service_bootstrap 注册真实实现, 测试侧注册轻量 fake。
+        from core.trading.account_manager import AccountManager
+        from core.trading.strategy_manager import StrategyManager
+        if not cls.service_container.is_registered(AccountManager):
+            cls.account_manager_mock = _FakeAccountManager()
+            cls.service_container.register(
+                AccountManager,
+                scope=ServiceScope.SINGLETON,
+                factory=lambda: cls.account_manager_mock
+            )
+        if not cls.service_container.is_registered(StrategyManager):
+            cls.strategy_manager_mock = _FakeStrategyManager()
+            cls.service_container.register(
+                StrategyManager,
+                scope=ServiceScope.SINGLETON,
+                factory=lambda: cls.strategy_manager_mock
+            )
+        logger.info("AccountManager/StrategyManager (测试 fake) 已注册到服务容器")
+
+        # R272: 注入 Mock 交易接口 (供 submit/cancel 走模拟成交, 不触真实接口)
+        # OrderExecutor.submit_order 在 paper 模式对真实接口 (CTP/XTP) 模式闸门
+        # MODE_BLOCKED 拦截 (order_executor.py:1189); 测试需用 MockTradingInterface
+        # (_is_mock_interface=True 放行, :1733-1736)。两条取接口路径都注入:
+        #   1) _account_interface_cache['test_account'] → _get_trading_interface_for_account
+        #      (order_executor.py:1044 缓存命中, 绕过真实接口创建)
+        #   2) _trading_interfaces[STOCK_A] → _get_trading_interface 回退 (:1514)
+        from core.trading.order_executor import MockTradingInterface
+        mock_iface = MockTradingInterface(cls.service_container, cls.event_bus)
+        cls.order_service.executor._account_interface_cache['test_account'] = mock_iface
+        cls.order_service.executor._trading_interfaces[AssetType.STOCK_A] = mock_iface
+        cls.order_service.executor._interface_health[AssetType.STOCK_A] = {
+            'connected': True, 'logged_in': True, 'last_error': None,
+            'retry_count': 0, 'last_health_check': None,
+            'consecutive_failures': 0, 'circuit_breaker': False,
+            'total_requests': 0, 'failed_requests': 0,
+        }
+        logger.info("Mock 交易接口已注入订单执行器 (STOCK_A / test_account)")
 
         # 清理测试数据
         cls.cleanup_test_data()
@@ -98,6 +287,13 @@ class TestOrderManagementIntegration(unittest.TestCase):
         """每个测试方法前的初始化"""
         self.test_orders: List[Order] = []
 
+        # 每个用例重置内存 DB, 保证用例间数据隔离
+        # (PENDING/SUBMITTED 等活跃订单不可删除, 不重置会跨用例累积导致
+        #  test_13 等按总量断言的用例失败)
+        db_mock = getattr(self, 'database_service_mock', None)
+        if db_mock is not None:
+            db_mock.reset()
+
     def tearDown(self):
         """每个测试方法后的清理"""
         # 清理本次测试创建的订单
@@ -114,6 +310,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建订单请求
         request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -163,6 +360,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         for i, (stock_code, order_type) in enumerate(zip(stock_codes, order_types)):
             request = OrderRequest(
                 strategy_id="test_strategy",
+                asset_type=AssetType.STOCK_A,
                 stock_code=stock_code,
                 order_type=order_type,
                 order_category=OrderCategory.LIMIT,
@@ -188,6 +386,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建测试订单
         request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -199,9 +398,10 @@ class TestOrderManagementIntegration(unittest.TestCase):
         order = self.order_service.create_order(request)
         self.test_orders.append(order)
 
-        # 查询订单
+        # 查询订单 (OrderQuery 不支持按 order_id 过滤, 改用策略+代码查询)
         query = OrderQuery(
-            order_id=order.order_id
+            strategy_id="test_strategy",
+            stock_code="000001"
         )
         orders = self.order_service.query_orders(query)
 
@@ -219,6 +419,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         for i in range(3):
             request = OrderRequest(
                 strategy_id="test_strategy",
+                asset_type=AssetType.STOCK_A,
                 stock_code=f"00000{i+1}",
                 order_type=OrderType.BUY,
                 order_category=OrderCategory.LIMIT,
@@ -249,6 +450,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建订单
         request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -260,7 +462,12 @@ class TestOrderManagementIntegration(unittest.TestCase):
         order = self.order_service.create_order(request)
         self.test_orders.append(order)
 
-        # 修改订单
+        # 先提交原订单 (R272: 接口层 cancel 需订单已在接口 _orders,
+        # MockTradingInterface.cancel_order 对未提交订单返回"订单不存在")
+        submitted = self.order_service.submit_order(order.order_id)
+        self.assertEqual(submitted.status, ExecutionStatus.SUCCESS)
+
+        # 修改订单 (撤单重下: 原单取消 + 新单创建提交, order_service.py:471-538)
         success = self.order_service.modify_order(
             order.order_id,
             new_price=12.0,
@@ -270,15 +477,23 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 验证修改结果
         self.assertTrue(success)
 
-        # 查询修改后的订单
-        query = OrderQuery(order_id=order.order_id)
+        # 原订单已被取消 (撤单重下语义)
+        old_order = self.order_service.get_order(order.order_id)
+        self.assertEqual(old_order.order_status, OrderStatus.CANCELLED)
+
+        # 新订单 (同策略最新 SUBMITTED 单) 价格/数量已更新
+        query = OrderQuery(
+            strategy_id="test_strategy",
+            order_status=OrderStatus.SUBMITTED
+        )
         orders = self.order_service.query_orders(query)
-        modified_order = orders[0]
+        new_order = next((o for o in orders if o.order_id != order.order_id), None)
+        self.assertIsNotNone(new_order, "修改后应创建新订单")
+        self.assertEqual(new_order.order_price, 12.0)
+        self.assertEqual(new_order.order_quantity, 200)
+        self.test_orders.append(new_order)
 
-        self.assertEqual(modified_order.order_price, 12.0)
-        self.assertEqual(modified_order.order_quantity, 200)
-
-        logger.info(f"订单修改成功: {order.order_id}")
+        logger.info(f"订单修改成功: {order.order_id} -> {new_order.order_id}")
 
     def test_06_cancel_order(self):
         """测试取消订单"""
@@ -287,6 +502,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建订单
         request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -298,20 +514,36 @@ class TestOrderManagementIntegration(unittest.TestCase):
         order = self.order_service.create_order(request)
         self.test_orders.append(order)
 
+        # 先提交订单 (R272: 接口层 cancel 需订单已在接口 _orders)
+        submitted = self.order_service.submit_order(order.order_id)
+        self.assertEqual(submitted.status, ExecutionStatus.SUCCESS)
+
         # 取消订单
         result = self.order_service.cancel_order(order.order_id)
 
         # 验证取消结果
-        self.assertEqual(result.status, 'success')
+        self.assertEqual(result.status, ExecutionStatus.SUCCESS)
 
         # 查询取消后的订单
-        query = OrderQuery(order_id=order.order_id)
-        orders = self.order_service.query_orders(query)
-        cancelled_order = orders[0]
-
+        cancelled_order = self.order_service.get_order(order.order_id)
         self.assertEqual(cancelled_order.order_status, OrderStatus.CANCELLED)
 
         logger.info(f"订单取消成功: {order.order_id}")
+
+    def test_06_b_shared_repository_singleton(self):
+        """R272-FIX 回归: executor 与 order_service 共享同一 repository 单例
+
+        背景: order_executor.py:357 此前直接 OrderRepository(...) 构造 → 独立
+        OrderCache, executor 写穿自己的缓存, order_service 走单例缓存读 →
+        test_06 实证 DB 已 CANCELLED 但 get_order 缓存滞留 SUBMITTED
+        (300s TTL 陈旧读, R255-P2 同型缺陷漏网点)。
+        修复: order_executor.py:363 改用 get_order_repository 模块级单例。
+        """
+        self.assertIs(
+            self.order_service.executor.repository,
+            self.order_service.repository,
+            "executor 与 order_service 应共享同一 repository 单例 (order_executor.py:363)"
+        )
 
     def test_07_submit_order(self):
         """测试提交订单"""
@@ -320,6 +552,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建订单
         request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -335,13 +568,10 @@ class TestOrderManagementIntegration(unittest.TestCase):
         result = self.order_service.submit_order(order.order_id)
 
         # 验证提交结果
-        self.assertEqual(result.status, 'success')
+        self.assertEqual(result.status, ExecutionStatus.SUCCESS)
 
         # 查询提交后的订单
-        query = OrderQuery(order_id=order.order_id)
-        orders = self.order_service.query_orders(query)
-        submitted_order = orders[0]
-
+        submitted_order = self.order_service.get_order(order.order_id)
         self.assertEqual(submitted_order.order_status, OrderStatus.SUBMITTED)
 
         logger.info(f"订单提交成功: {order.order_id}")
@@ -353,6 +583,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建订单
         request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -381,6 +612,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建订单
         request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -408,6 +640,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建有效的订单请求
         valid_request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -426,6 +659,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建无效的订单请求（数量太小）
         invalid_request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -452,6 +686,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         for i in range(5):
             request = OrderRequest(
                 strategy_id="test_strategy",
+                asset_type=AssetType.STOCK_A,
                 stock_code=f"00000{i+1}",
                 order_type=OrderType.BUY,
                 order_category=OrderCategory.LIMIT,
@@ -479,6 +714,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         for i in range(3):
             request = OrderRequest(
                 strategy_id="test_strategy",
+                asset_type=AssetType.STOCK_A,
                 stock_code=f"00000{i+1}",
                 order_type=OrderType.BUY,
                 order_category=OrderCategory.LIMIT,
@@ -512,6 +748,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         for i in range(5):
             request = OrderRequest(
                 strategy_id="test_strategy",
+                asset_type=AssetType.STOCK_A,
                 stock_code=f"00000{i+1}",
                 order_type=OrderType.BUY if i % 2 == 0 else OrderType.SELL,
                 order_category=OrderCategory.LIMIT,
@@ -551,6 +788,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         # 创建订单
         request = OrderRequest(
             strategy_id="test_strategy",
+            asset_type=AssetType.STOCK_A,
             stock_code="000001",
             order_type=OrderType.BUY,
             order_category=OrderCategory.LIMIT,
@@ -579,6 +817,7 @@ class TestOrderManagementIntegration(unittest.TestCase):
         for i in range(5):
             request = OrderRequest(
                 strategy_id="test_strategy",
+                asset_type=AssetType.STOCK_A,
                 stock_code=f"00000{i+1}",
                 order_type=OrderType.BUY if i % 2 == 0 else OrderType.SELL,
                 order_category=OrderCategory.LIMIT,

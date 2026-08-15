@@ -104,10 +104,62 @@ class RiskEventSubscriber:
     def _handle_risk_stop_trading(self, event):
         logger.warning(f"[RiskEventSubscriber] 收到停止交易事件: duration={getattr(event, 'duration_minutes', 30)}min")
         self._audit_logger._on_risk_stop_trading(event)
+        # R269-D2: 自动响应 —— 熔断所有新订单 (OrderExecutor.halt_trading)
+        executor = self._resolve_executor()
+        if executor is not None:
+            try:
+                executor.halt_trading(reason=f"停止交易事件 (duration={getattr(event, 'duration_minutes', 30)}min)")
+                logger.critical("已执行风控响应: 熔断所有新订单")
+            except Exception as e:
+                logger.error(f"风控熔断执行失败: {e}")
+        else:
+            logger.warning("OrderExecutor 不可用, 跳过熔断执行")
 
     def _handle_risk_emergency_liquidation(self, event):
         logger.critical(f"[RiskEventSubscriber] 收到紧急平仓事件: {getattr(event, 'alert', {})}")
         self._audit_logger._on_risk_emergency_liquidation(event)
+        # R269-D2: 自动响应 —— 取消所有活跃订单 + 熔断新订单
+        order_service = self._resolve_order_service()
+        if order_service is not None:
+            try:
+                cancelled = order_service.cancel_all_active_orders()
+                logger.critical(f"已执行风控响应: 取消活跃订单 {cancelled} 笔")
+            except Exception as e:
+                logger.error(f"取消活跃订单失败: {e}")
+        else:
+            logger.warning("OrderService 不可用, 跳过平仓执行")
+        executor = self._resolve_executor()
+        if executor is not None:
+            try:
+                executor.halt_trading(reason="紧急平仓事件")
+            except Exception as e:
+                logger.error(f"风控熔断执行失败: {e}")
+
+    def _resolve_executor(self):
+        """防御式解析 OrderExecutor（未注册/不可用时返回 None）"""
+        try:
+            from core.containers import get_service_container
+            container = get_service_container()
+            if container is None:
+                return None
+            from core.trading.order_executor import OrderExecutor
+            return container.try_resolve(OrderExecutor)
+        except Exception as e:
+            logger.warning(f"解析 OrderExecutor 失败: {e}")
+            return None
+
+    def _resolve_order_service(self):
+        """防御式解析 OrderService（未注册/不可用时返回 None）"""
+        try:
+            from core.containers import get_service_container
+            container = get_service_container()
+            if container is None:
+                return None
+            from core.trading.order_service import OrderService
+            return container.try_resolve(OrderService)
+        except Exception as e:
+            logger.warning(f"解析 OrderService 失败: {e}")
+            return None
 
     def _handle_order_executed(self, event):
         logger.info(f"[RiskEventSubscriber] 订单执行: order_id={getattr(event, 'order_id', '')}")

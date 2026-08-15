@@ -25,6 +25,8 @@ R256 交叉验证回归测试: 订单域 P0 双实例割裂修复
   (OrderValidator/Monitor/Analyzer 真实构造, 仅依赖 mock 的 order_repository)
 - OrderExecutor.cancel_order: patch 类方法断言调用路径 (账户缓存优先 vs 注册接口回退)
 - 本文件末尾恢复被 mock 污染的 sys.modules 条目
+- R272 治理: 模块级覆盖 sys.modules 前保存原真实模块引用, 文件末尾恢复真实模块
+  (而非 pop 移除), 消除后续文件类身份漂移
 """
 import os
 import sys
@@ -59,11 +61,24 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+# ---------------------------------------------------------------------------
+# R272 治理: sys.modules 覆盖前保存原真实模块引用, 末尾恢复真实模块
+# ---------------------------------------------------------------------------
+_ORIGINAL_MODULES: dict = {}
+
+
+def _install(name, mod):
+    """R272 治理: 覆盖 sys.modules 前保存原真实模块引用 (存在才保存)"""
+    if name in sys.modules and name not in _ORIGINAL_MODULES:
+        _ORIGINAL_MODULES[name] = sys.modules[name]
+    sys.modules[name] = mod
+
+
 def _make_mock_module(name: str) -> MagicMock:
     _m = MagicMock()
     _m.__name__ = name
     _m.__file__ = f'<mock:{name}>'
-    sys.modules[name] = _m
+    _install(name, _m)
     return _m
 
 
@@ -73,7 +88,7 @@ def _load_module_from_file(module_name: str, rel_path: str):
     spec = importlib.util.spec_from_file_location(
         module_name, os.path.join(ROOT, rel_path))
     module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
+    _install(module_name, module)
     spec.loader.exec_module(module)
     return module
 
@@ -233,25 +248,33 @@ class TestCancelOrderUsesAccountCache(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 恢复被 mock 污染的 sys.modules 条目 (同 R252-R255 交叉审查教训)
+# R272 治理: 恢复真实模块 (而非 pop 移除) — 消除后续文件类身份漂移
 # R256: mock 窗口内加载的消费者副本 (order_executor/order_service 等) 内部固化了对
 # order_repository mock 的引用; order_validator/order_monitor/order_analyzer 在
-# 副本加载时被真实导入且固化 mock order_repository 引用, 一并弹出, 避免污染
+# 副本加载时被真实导入且固化 mock order_repository 引用, 一并恢复, 避免污染
 # 后续文件 (与 test_r254_trading_domain.py 同型污染)。
+# 显式注入条目 (在 _ORIGINAL_MODULES) 恢复真实模块; 依赖子模块
+# (order_validator/order_monitor/order_analyzer, 未显式注入) 原本不存在则 pop。
 # ---------------------------------------------------------------------------
-for _mod_name in ('core.trading.order_repository',
-                  'core.trading.account_repository',
-                  'core.trading.account_manager',
-                  'core.trading.strategy_manager',
-                  'core.trading.order_validator',
-                  'core.trading.order_monitor',
-                  'core.trading.order_analyzer',
-                  'core.trading.order_models',
-                  'core.trading.trading_types',
-                  'core.trading.account_models',
-                  'core.trading.order_executor',
-                  'core.trading.order_service'):
-    sys.modules.pop(_mod_name, None)
+_ALL_INJECTED_NAMES = (
+    'core.trading.order_repository',
+    'core.trading.account_repository',
+    'core.trading.account_manager',
+    'core.trading.strategy_manager',
+    'core.trading.order_validator',
+    'core.trading.order_monitor',
+    'core.trading.order_analyzer',
+    'core.trading.order_models',
+    'core.trading.trading_types',
+    'core.trading.account_models',
+    'core.trading.order_executor',
+    'core.trading.order_service',
+)
+for _name, _orig in _ORIGINAL_MODULES.items():
+    sys.modules[_name] = _orig
+for _name in _ALL_INJECTED_NAMES:
+    if _name not in _ORIGINAL_MODULES:
+        sys.modules.pop(_name, None)
 
 
 if __name__ == '__main__':

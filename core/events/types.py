@@ -632,6 +632,20 @@ class IndicatorChangedEvent(BaseEvent):
             'indicator_params': self.indicator_params
         })
 
+    @property
+    def dedup_fingerprint(self) -> str:
+        """R282: 去重指纹（指标集 + 参数集）。
+
+        EventBus 去重窗口 0.5s：改参后的指标事件携带不同指纹，
+        不会被同窗口内相同类型的旧事件误吞（如"选指标 → 立即改参"连续操作）。
+        """
+        params = self.indicator_params or {}
+        params_items = sorted(
+            (k, sorted((pk, repr(pv)) for pk, pv in (v or {}).items()))
+            for k, v in params.items()
+        )
+        return f"{sorted(self.selected_indicators)}|{params_items}"
+
 
 @dataclass
 class MultiScreenToggleEvent(BaseEvent):

@@ -76,13 +76,13 @@ class OrderRepository:
                     order_id, strategy_id, asset_type, stock_code, order_type, order_category,
                     order_price, order_quantity, order_status, create_time, update_time,
                     execute_time, filled_quantity, filled_price, commission, error_message,
-                    stop_price, user_id, account_id, tags, metadata,
+                    error_code, stop_price, user_id, account_id, tags, metadata,
                     contract_multiplier, margin_ratio, strike_price, expiry_date, option_type
                 ) VALUES (
                     ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?
                 )
                 """
@@ -104,6 +104,7 @@ class OrderRepository:
                     order_data['filled_price'],
                     order_data['commission'],
                     order_data['error_message'],
+                    order_data['error_code'],
                     order_data['stop_price'],
                     order_data['user_id'],
                     order_data['account_id'],
@@ -198,13 +199,13 @@ class OrderRepository:
                         order_id, strategy_id, asset_type, stock_code, order_type, order_category,
                         order_price, order_quantity, order_status, create_time, update_time,
                         execute_time, filled_quantity, filled_price, commission, error_message,
-                        stop_price, user_id, account_id, tags, metadata,
+                        error_code, stop_price, user_id, account_id, tags, metadata,
                         contract_multiplier, margin_ratio, strike_price, expiry_date, option_type
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
                         ?, ?, ?, ?, ?
                     )
                     """
@@ -229,6 +230,7 @@ class OrderRepository:
                             order_data['filled_price'],
                             order_data['commission'],
                             order_data['error_message'],
+                            order_data['error_code'],
                             order_data['stop_price'],
                             order_data['user_id'],
                             order_data['account_id'],
@@ -291,6 +293,7 @@ class OrderRepository:
                 filled_price = ?,
                 commission = ?,
                 error_message = ?,
+                error_code = ?,
                 stop_price = ?,
                 user_id = ?,
                 account_id = ?,
@@ -319,6 +322,7 @@ class OrderRepository:
                 order_data['filled_price'],
                 order_data['commission'],
                 order_data['error_message'],
+                order_data['error_code'],
                 order_data['stop_price'],
                 order_data['user_id'],
                 order_data['account_id'],
@@ -395,6 +399,7 @@ class OrderRepository:
                             filled_price = ?,
                             commission = ?,
                             error_message = ?,
+                            error_code = ?,
                             stop_price = ?,
                             user_id = ?,
                             account_id = ?,
@@ -423,6 +428,7 @@ class OrderRepository:
                             order_data['filled_price'],
                             order_data['commission'],
                             order_data['error_message'],
+                            order_data['error_code'],
                             order_data['stop_price'],
                             order_data['user_id'],
                             order_data['account_id'],

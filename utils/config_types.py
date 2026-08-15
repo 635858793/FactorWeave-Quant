@@ -241,6 +241,17 @@ class DataConfig:
     update_interval: int = 3600
     data_source: str = 'local'
     backup_enabled: bool = True
+    # R275 扩展: 数据源路由健康检查/熔断阈值（DataSourceRouter 构造参数）
+    health_check_interval: int = 30              # 健康检查间隔（秒）
+    circuit_failure_threshold: int = 15          # 熔断失败次数阈值
+    circuit_failure_rate: float = 0.5            # 熔断失败率阈值
+    circuit_recovery_timeout_ms: int = 60000     # 熔断恢复超时（毫秒）
+    circuit_half_open_max_calls: int = 3         # 半开状态最大调用次数
+    circuit_sliding_window_size: int = 10        # 滑动窗口大小
+    # R285/R286: 低质量K线落库拒绝开关（默认 False 兼容）。
+    # 开启后 store_standardized_data 对质量分 < 60 的 K 线批次拒绝落库（return False），
+    # 从源头阻断坏数据入库；读取侧仍依赖质量分做存量坏数据识别与多源选优。
+    reject_low_quality_kline: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary
@@ -254,7 +265,14 @@ class DataConfig:
             "auto_update": self.auto_update,
             "update_interval": self.update_interval,
             "data_source": self.data_source,
-            "backup_enabled": self.backup_enabled
+            "backup_enabled": self.backup_enabled,
+            "health_check_interval": self.health_check_interval,
+            "circuit_failure_threshold": self.circuit_failure_threshold,
+            "circuit_failure_rate": self.circuit_failure_rate,
+            "circuit_recovery_timeout_ms": self.circuit_recovery_timeout_ms,
+            "circuit_half_open_max_calls": self.circuit_half_open_max_calls,
+            "circuit_sliding_window_size": self.circuit_sliding_window_size,
+            "reject_low_quality_kline": self.reject_low_quality_kline
         }
 
     @classmethod
@@ -273,7 +291,14 @@ class DataConfig:
             auto_update=data.get("auto_update", True),
             update_interval=data.get("update_interval", 3600),
             data_source=data.get("data_source", 'local'),
-            backup_enabled=data.get("backup_enabled", True)
+            backup_enabled=data.get("backup_enabled", True),
+            health_check_interval=data.get("health_check_interval", 30),
+            circuit_failure_threshold=data.get("circuit_failure_threshold", 15),
+            circuit_failure_rate=data.get("circuit_failure_rate", 0.5),
+            circuit_recovery_timeout_ms=data.get("circuit_recovery_timeout_ms", 60000),
+            circuit_half_open_max_calls=data.get("circuit_half_open_max_calls", 3),
+            circuit_sliding_window_size=data.get("circuit_sliding_window_size", 10),
+            reject_low_quality_kline=data.get("reject_low_quality_kline", False)
         )
 
 

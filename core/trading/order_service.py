@@ -68,11 +68,12 @@ class OrderService:
         self.monitor = OrderMonitor(self.service_container, self.event_bus)
         self.analyzer = OrderAnalyzer(self.service_container, self.event_bus)
 
-    def _get_order_lock(self, order_id: str) -> threading.Lock:
-        """获取订单级别的锁"""
+    def _get_order_lock(self, order_id: str) -> threading.RLock:
+        """获取订单级别的锁 (R272: RLock 可重入 — modify_order :496 在持锁内调
+        cancel_order :402 同锁再取, threading.Lock 非重入会导致永久死锁)"""
         with self._lock_manager_lock:
             if order_id not in self._order_locks:
-                self._order_locks[order_id] = threading.Lock()
+                self._order_locks[order_id] = threading.RLock()
             return self._order_locks[order_id]
 
     def _cleanup_order_lock(self, order_id: str):
@@ -334,10 +335,11 @@ class OrderService:
                         timestamp=datetime.now().isoformat()
                     )
 
-                    # 发布订单被拒绝事件
+                    # 发布订单被拒绝事件 (R271: 载荷补 error_code, 供 UI 展示具体拒绝原因)
                     self.event_bus.publish('order_rejected',
                         order_id=order_id,
-                        error=validation_result.message
+                        error=validation_result.message,
+                        error_code=validation_result.error_code
                     )
 
                     return ExecutionResult(
@@ -361,6 +363,9 @@ class OrderService:
                     if result.status == ExecutionStatus.FAILED:
                         order.order_status = OrderStatus.FAILED
                         order.error_message = result.message
+                        # R271: 风控拒绝错误码 (RISK_HALTED/DAILY_LOSS_LIMIT_EXCEEDED 等) 落盘,
+                        # 供订单列表 UI 展示拒绝原因
+                        order.error_code = getattr(result, 'error_code', None)
                         order.update_time = datetime.now()
                         self.repository.update_order(order)
                         
@@ -375,7 +380,8 @@ class OrderService:
 
                     self.event_bus.publish('order_submit_failed',
                         order_id=order_id,
-                        error=result.message
+                        error=result.message,
+                        error_code=getattr(result, 'error_code', None)
                     )
 
                 return result
@@ -499,6 +505,9 @@ class OrderService:
 
                 new_request = OrderRequest(
                     strategy_id=order.strategy_id,
+                    # R272: 补 asset_type —— OrderRequest 必填字段, 缺失导致撤单重下
+                    # 构造时抛异常 (test_05_modify_order 实证), 订单修改链路必失败
+                    asset_type=order.asset_type,
                     stock_code=order.stock_code,
                     order_type=order.order_type,
                     order_category=order.order_category,

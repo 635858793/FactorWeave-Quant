@@ -40,6 +40,8 @@ class HealthCheckResult:
     # 兼容两种时间戳参数
     timestamp: datetime = field(default_factory=datetime.now)  # 时间戳 - 主要参数
     last_check_time: Optional[datetime] = None  # 兼容参数
+    # 兼容健康评分参数（如 level2_realtime_plugin 传入 score=）
+    score: Optional[float] = None                # 健康评分 0~1
     # 兼容不同的详细信息参数
     extra_info: Dict[str, Any] = field(default_factory=dict)  # 额外信息 - 主要参数
     details: Optional[Dict[str, Any]] = None    # 兼容参数
@@ -76,6 +78,7 @@ class HealthCheckResult:
             'response_time_ms': self.response_time_ms,
             'timestamp': self.timestamp.isoformat() if self.timestamp else None,
             'last_check_time': self.last_check_time.isoformat() if self.last_check_time else None,
+            'score': self.score,
             'extra_info': self.extra_info,
             'details': self.details,
             'status_code': self.status_code,
@@ -524,14 +527,73 @@ class DataSourcePluginAdapter:
             self.logger.error(f"获取资产列表异常: {self.plugin_id} - {e}")
             return []
 
-    def get_kdata(self, symbol: str, freq: str = "D", start_date: str = None,
-                  end_date: str = None, count: int = None) -> pd.DataFrame:
-        """获取K线数据"""
+    def get_kdata(self, symbol: str, freq: str = "D", start_date=None,
+                  end_date=None, count: int = None,
+                  asset_type: Optional[AssetType] = None) -> pd.DataFrame:
+        """获取K线数据（R275 签名自适应）
+
+        系统调用约定为 (symbol, freq, start_date, end_date, count)，
+        但 BasePluginTemplate 系插件（crypto/wenhua/eastmoney_unified 等）
+        使用 (interval/period, limit, datetime日期, asset_type) 签名。
+        若直接位置透传会导致参数错位（如 count 被当作 asset_type、字符串日期
+        传入 datetime 参数后 .timestamp()/.strftime() 崩溃）。此处按插件实际
+        签名关键字转发并归一化参数名与日期类型，杜绝断链。
+        """
         try:
-            return self.plugin.get_kdata(symbol, freq, start_date, end_date, count)
+            import inspect
+            sig = inspect.signature(self.plugin.get_kdata)
+            params = sig.parameters
+
+            kwargs = {'symbol': symbol}
+
+            # 周期参数名归一化：freq（标准）/ period / interval
+            if 'freq' in params:
+                kwargs['freq'] = freq
+            elif 'period' in params:
+                kwargs['period'] = freq
+            elif 'interval' in params:
+                kwargs['interval'] = freq
+
+            # 数量参数名归一化：count（标准）/ limit
+            if 'count' in params:
+                kwargs['count'] = count
+            elif 'limit' in params:
+                kwargs['limit'] = count or 500
+
+            # 日期类型归一化：仅当插件声明 datetime 类型注解时，将系统 str('YYYYMMDD') 转为
+            # datetime（标准插件如东财/baostock 声明 str，原样透传，避免破坏其 beg/end 拼接）
+            if 'start_date' in params:
+                kwargs['start_date'] = self._normalize_date(
+                    start_date, params['start_date'].annotation)
+            if 'end_date' in params:
+                kwargs['end_date'] = self._normalize_date(
+                    end_date, params['end_date'].annotation)
+
+            # 资产类型透传（EastmoneyUnifiedPlugin 依赖，防止 count 错位为 asset_type
+            # 导致 _format_symbol 退化为默认上海市场，深市/北市代码格式错误）
+            if 'asset_type' in params and asset_type is not None:
+                kwargs['asset_type'] = asset_type
+
+            return self.plugin.get_kdata(**kwargs)
         except Exception as e:
             self.logger.error(f"获取K线数据异常: {self.plugin_id} - {e}")
             return pd.DataFrame()
+
+    @staticmethod
+    def _normalize_date(value, param_annotation=datetime):
+        """将系统 str('YYYYMMDD'/'YYYY-MM-DD') 转为 datetime；None/datetime 原样返回。
+
+        仅当插件参数声明为 datetime 类型（含 Optional[datetime]/Union[datetime, None]，
+        如 BasePluginTemplate 系插件）时转换，标准插件声明 str 则原样透传。
+        """
+        if value is None or isinstance(value, datetime):
+            return value
+        if not _is_datetime_annotation(param_annotation):
+            return value
+        s = str(value).replace('-', '').replace('/', '')
+        if len(s) == 8 and s.isdigit():
+            return datetime.strptime(s, '%Y%m%d')
+        return value
 
     def get_real_time_quotes(self, symbols: List[str]) -> pd.DataFrame:
         """获取实时行情"""
@@ -552,6 +614,22 @@ class DataSourcePluginAdapter:
         except Exception as e:
             self.logger.error(f"获取统计信息异常: {self.plugin_id} - {e}")
             return {}
+
+
+def _is_datetime_annotation(param_annotation) -> bool:
+    """判断插件参数注解是否为 datetime 类型（支持 Optional[datetime]/Union[datetime, None]）"""
+    if param_annotation is datetime:
+        return True
+    if isinstance(param_annotation, str):
+        return 'datetime' in param_annotation and 'date' != param_annotation
+    try:
+        import typing
+        args = typing.get_args(param_annotation)
+        if args:
+            return any(a is datetime for a in args)
+    except Exception:
+        pass
+    return False
 
 
 def validate_plugin_interface(plugin_instance) -> bool:

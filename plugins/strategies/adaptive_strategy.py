@@ -23,8 +23,6 @@ except ImportError:
 # 导入统一策略管理系统
 from core.strategy.base_strategy import BaseStrategy, StrategySignal, SignalType, StrategyType
 from core.strategy import register_strategy
-from core.stop_loss import AdaptiveStopLoss
-from core.take_profit import AdaptiveTakeProfit
 
 
 @register_strategy("AdaptivePandas", metadata={

@@ -348,7 +348,7 @@ class TestP01_FullPathRegression:
         mock_account.available_cash = 500.0
         mock_account.position_limit = 100
         mock_acct_mgr.get_account = MagicMock(return_value=mock_account)
-        mock_acct_mgr.get_positions_by_account = MagicMock(return_value=[])
+        mock_acct_mgr.get_account_positions = MagicMock(return_value=[])
 
         def resolve_side_effect(cls):
             if 'EnhancedRiskMonitor' in str(cls):
@@ -372,7 +372,7 @@ class TestP01_FullPathRegression:
         mock_account.available_cash = 100000.0
         mock_account.position_limit = 100
         mock_acct_mgr.get_account = MagicMock(return_value=mock_account)
-        mock_acct_mgr.get_positions_by_account = MagicMock(return_value=[])
+        mock_acct_mgr.get_account_positions = MagicMock(return_value=[])
 
         def resolve_side_effect(cls):
             if 'EnhancedRiskMonitor' in str(cls):
@@ -394,7 +394,7 @@ class TestP01_FullPathRegression:
         mock_account.available_cash = 100000.0
         mock_account.position_limit = 10
         mock_acct_mgr.get_account = MagicMock(return_value=mock_account)
-        mock_acct_mgr.get_positions_by_account = MagicMock(
+        mock_acct_mgr.get_account_positions = MagicMock(
             return_value=list(range(10)))
 
         def resolve_side_effect(cls):

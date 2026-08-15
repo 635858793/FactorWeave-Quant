@@ -12,7 +12,7 @@ from enum import Enum
 from dataclasses import dataclass
 
 from core.trading.order_models import Order, OrderFill, OrderType, OrderStatus, OrderCategory
-from core.trading.order_repository import OrderRepository
+from core.trading.order_repository import OrderRepository, get_order_repository
 from core.containers import ServiceContainer
 from core.events import get_event_bus
 from core.events.event_bus import EventBus
@@ -344,13 +344,23 @@ class OrderExecutor:
         # (trading_service.py:357-374) 联动下发; 关闭时 _pre_trade_risk_check 快速放行。
         self._risk_control_enabled = True
 
+        # R269-D2: 风控熔断暂停标志 (由 RiskEventSubscriber 在 stop_trading/紧急平仓
+        # 事件时置位, 之后 _pre_trade_risk_check 拦截所有新订单)
+        self._halted = False
+
         self._initialize()
 
         logger.info("订单执行器初始化完成")
 
     def _initialize(self):
         """初始化"""
-        self.repository = OrderRepository(self.service_container, self.event_bus)
+        # R272-FIX: 改用模块级懒单例 (get_order_repository), 消除与
+        # order_service/monitor/analyzer 的独立 OrderCache 割裂。
+        # 此前直接 OrderRepository(...) 构造 → 独立缓存实例, executor 写穿
+        # 自己的缓存, order_service 等走单例缓存读, 存在 300s TTL 陈旧读
+        # (test_order_management_integration.test_06 实证: DB 已 CANCELLED,
+        # 缓存滞留 SUBMITTED)。同 R255-P2 治理模式。
+        self.repository = get_order_repository(self.service_container, self.event_bus)
 
         # 注册不同资产类型的交易接口
         self._register_trading_interfaces()
@@ -758,6 +768,26 @@ class OrderExecutor:
             import traceback
             logger.error(f"错误堆栈:\n{traceback.format_exc()}")
             return None
+
+    def halt_trading(self, reason: str = "") -> None:
+        """R269-D2: 风控熔断 —— 暂停所有新订单受理。
+
+        由 RiskEventSubscriber 在 stop_trading / 紧急平仓事件时调用;
+        置位后 _pre_trade_risk_check 以 RISK_HALTED 拒绝一切新订单。
+        """
+        self._halted = True
+        logger.critical(f"风控熔断已触发, 暂停所有新订单: {reason}")
+
+    def resume_trading(self) -> None:
+        """R269-D2: 解除风控熔断, 恢复新订单受理。"""
+        if self._halted:
+            self._halted = False
+            logger.info("风控熔断已解除, 恢复订单受理")
+
+    def is_halted(self) -> bool:
+        """R269-D2: 查询是否处于风控熔断状态。"""
+        return getattr(self, '_halted', False)
+
     def _pre_trade_risk_check(self, order: Order) -> Dict[str, Any]:
         """
         交易前风控预检查（P0-2修复）
@@ -771,6 +801,11 @@ class OrderExecutor:
             Dict[str, Any]: 包含 'passed' 和 'reason' 的检查结果
         """
         try:
+            # R269-D2: 风控熔断拦截 —— 熔断为资金安全最高优先级, 即使风控开关被
+            # 关闭也不放行 (RiskEventSubscriber 在 stop_trading/紧急平仓事件时置位)
+            if getattr(self, '_halted', False):
+                return {'passed': False, 'reason': '风控熔断中, 已暂停新订单受理', 'warnings': [], 'error_code': 'RISK_HALTED'}
+
             # R258-P0: 风控开关 (trading_service.set_mode 经 set_trading_mode 联动下发)。
             # 关闭时快速放行, 不执行任何风控检查 (backtest 显式关闭用, 默认开启)
             if not getattr(self, '_risk_control_enabled', True):
@@ -785,6 +820,9 @@ class OrderExecutor:
                 risk_monitor = self.service_container.try_resolve(EnhancedRiskMonitor)
                 
                 if risk_monitor and hasattr(risk_monitor, 'check_order_risk'):
+                    # R268-F1: 同步账户实时持仓 → 集中度检查数据源。
+                    # 不打通则 _current_positions 恒空 → 集中度限制永不执行。
+                    self._sync_positions_to_risk_monitor(risk_monitor, order.account_id)
                     risk_result = risk_monitor.check_order_risk(order)
                     if not risk_result.get('passed', True):
                         result['passed'] = False
@@ -807,14 +845,28 @@ class OrderExecutor:
                     if account:
                         order_value = order.order_price * order.order_quantity
                         
-                        if hasattr(account, 'available_cash') and account.available_cash:
-                            if order_value > account.available_cash:
-                                result['passed'] = False
-                                result['reason'] = f"资金不足: 需要{order_value:.2f}, 可用{account.available_cash:.2f}"
-                                return result
+                        # R268-F4: 修复资金检查 fail-open —— 原 `and account.available_cash` 使
+                        # 可用资金为 0/None 时跳过校验 (0 资金也可下单)。0 → 拒绝, None → 告警。
+                        # R273-F1: 原 hasattr(account, 'available_cash') 恒 False (真实 Account
+                        # dataclass 仅有 available_balance, account_models.py:72) → 校验整体跳过。
+                        # 现双字段兼容: 属性存在 → 直接用 (None = 资金未知 → 告警);
+                        # 属性不存在 → 回退 available_balance (真实 Account 路径)。
+                        if hasattr(account, 'available_cash'):
+                            available_funds = account.available_cash
+                        else:
+                            available_funds = getattr(account, 'available_balance', None)
+                        if available_funds is None:
+                            result['warnings'].append("账户可用资金未知，无法校验资金充足性")
+                        elif order_value > available_funds:
+                            result['passed'] = False
+                            result['reason'] = f"资金不足: 需要{order_value:.2f}, 可用{available_funds:.2f}"
+                            return result
                         
                         if hasattr(account, 'position_limit') and account.position_limit:
-                            positions = account_manager.get_positions_by_account(account.account_id)
+                            # R268-F4: get_positions_by_account 在 AccountManager 中不存在
+                            # (account_manager.py:604 实际方法为 get_account_positions) →
+                            # AttributeError 被下方 :821 捕获 → 误拒所有设置了 position_limit 的账户。
+                            positions = account_manager.get_account_positions(account.account_id)
                             if len(positions) >= account.position_limit:
                                 result['warnings'].append(f"持仓数量接近限制: {len(positions)}/{account.position_limit}")
                                 
@@ -831,15 +883,22 @@ class OrderExecutor:
                 result['passed'] = False
                 result['reason'] = f"订单价格无效: {order.order_price}"
                 return result
-            # 集成核心风控模块 - 止损检查 (P0-4修复)
+            # 集成核心风控模块 - 止损/止盈检查 (P0-4修复 + R269-D3 止损空转 + R270 止盈融入)
             try:
                 from core.risk_control import RiskControlStrategy
                 risk_ctrl = RiskControlStrategy()
                 entry_price = self._get_avg_entry_price(order.account_id, order.stock_code)
                 if entry_price is not None and entry_price > 0:
+                    position = self._get_position(order.account_id, order.stock_code)
+                    # R269-D3: 修复止损检查空转 —— 原 stop_loss_levels 唯一填充点
+                    # calculate_stop_loss (risk_control.py:135) 全库零调用 → 恒空 →
+                    # check_stop_loss_trigger (risk_control.py:163-165) 恒放行。
+                    # 此处先填充动态止损价 (PositionRiskMonitor 自适应优先, 降级保守值)。
+                    if position != 0:
+                        self._fill_stop_loss_level(risk_ctrl, order, entry_price, position)
                     triggered, reason = risk_ctrl.check_stop_loss_trigger(
                         asset=order.stock_code,
-                        position=self._get_position(order.account_id, order.stock_code),
+                        position=position,
                         entry_price=entry_price,
                         current_price=order.order_price,
                         current_time=order.create_time
@@ -848,10 +907,24 @@ class OrderExecutor:
                         result['passed'] = False
                         result['reason'] = f"风控止损触发: {reason}"
                         return result
+                    # R270: 止盈检查 (对称于止损, 激活 AdaptiveTakeProfit 生产消费)
+                    if position != 0:
+                        self._fill_take_profit_level(risk_ctrl, order, entry_price, position)
+                    tp_triggered, tp_reason = risk_ctrl.check_take_profit_trigger(
+                        asset=order.stock_code,
+                        position=position,
+                        entry_price=entry_price,
+                        current_price=order.order_price,
+                        current_time=order.create_time
+                    )
+                    if tp_triggered:
+                        result['passed'] = False
+                        result['reason'] = f"风控止盈触发: {tp_reason}"
+                        return result
             except ImportError:
-                logger.debug("RiskControlStrategy不可用，跳过止损风控检查")
+                logger.debug("RiskControlStrategy不可用，跳过止损/止盈风控检查")
             except Exception as e:
-                logger.warning(f"风控止损检查异常(不影响交易): {e}")
+                logger.warning(f"风控止损/止盈检查异常(不影响交易): {e}")
             max_order_value = 10000000
             order_value = order.order_price * order.order_quantity
             if order_value > max_order_value:
@@ -867,6 +940,108 @@ class OrderExecutor:
         except Exception as e:
             logger.critical(f"交易前风控检查异常，订单被拒绝: {order.order_id}, 错误: {e}")
             return {'passed': False, 'reason': f'风控检查异常，订单被拒绝: {str(e)}', 'warnings': [], 'error_code': 'RISK_CHECK_FAILED'}
+    def _fill_stop_loss_level(self, risk_ctrl, order, entry_price: float, position: float) -> None:
+        """R269-D3: 为 check_stop_loss_trigger 填充动态止损价 (修复止损空转)。
+
+        优先使用 PositionRiskMonitor (AdaptiveStopLoss 五路融合, 需 K 线行情,
+        数据不可用时降级固定比例); 组件不可用时降级 RiskControlStrategy 保守计算。
+        仅填充不阻断 —— 填充失败由 check_stop_loss_trigger 固定比例兜底。
+        """
+        try:
+            stop_price = None
+            try:
+                from core.trading.position_risk_monitor import PositionRiskMonitor
+                monitor = None
+                try:
+                    if self.service_container is not None:
+                        monitor = self.service_container.try_resolve(PositionRiskMonitor)
+                except Exception:
+                    monitor = None
+                if monitor is None:
+                    monitor = PositionRiskMonitor(self.service_container)
+                stop_price = monitor.get_dynamic_stop_price(
+                    stock_code=order.stock_code,
+                    current_price=entry_price,
+                    position=position,
+                )
+            except Exception as e:
+                logger.debug(f"自适应止损不可用, 降级 RiskControlStrategy: {e}")
+            if stop_price is None or stop_price <= 0:
+                # 降级: 保守默认波动率 (calculate_stop_loss risk_metrics 有缺省兜底)
+                stop_price = risk_ctrl.calculate_stop_loss(
+                    asset=order.stock_code,
+                    price=entry_price,
+                    position=position,
+                    risk_metrics={'market_risk': {'volatility': 0.2, 'beta': 1.0}},
+                )
+            if stop_price and stop_price > 0:
+                risk_ctrl.stop_loss_levels[order.stock_code] = float(stop_price)
+        except Exception as e:
+            logger.warning(f"填充止损水平失败(将由 check_stop_loss_trigger 兜底): {e}")
+
+    def _fill_take_profit_level(self, risk_ctrl, order, entry_price: float, position: float) -> None:
+        """R270: 为 check_take_profit_trigger 填充动态止盈价 (激活 AdaptiveTakeProfit 能力)。
+
+        优先使用 PositionRiskMonitor.get_dynamic_take_profit (需 K 线行情,
+        数据不可用时降级固定比例); 组件不可用时降级 RiskControlStrategy 保守计算。
+        仅填充不阻断 —— 填充失败由 check_take_profit_trigger 固定比例兜底。
+        """
+        try:
+            tp_price = None
+            try:
+                from core.trading.position_risk_monitor import PositionRiskMonitor
+                monitor = None
+                try:
+                    if self.service_container is not None:
+                        monitor = self.service_container.try_resolve(PositionRiskMonitor)
+                except Exception:
+                    monitor = None
+                if monitor is None:
+                    monitor = PositionRiskMonitor(self.service_container)
+                tp_price = monitor.get_dynamic_take_profit(
+                    stock_code=order.stock_code,
+                    current_price=entry_price,
+                    position=position,
+                )
+            except Exception as e:
+                logger.debug(f"自适应止盈不可用, 降级 RiskControlStrategy: {e}")
+            if tp_price is None or tp_price <= 0:
+                # 降级: 保守默认波动率 (calculate_take_profit risk_metrics 有缺省兜底)
+                tp_price = risk_ctrl.calculate_take_profit(
+                    asset=order.stock_code,
+                    price=entry_price,
+                    position=position,
+                    risk_metrics={'market_risk': {'volatility': 0.2, 'beta': 1.0}},
+                )
+            if tp_price and tp_price > 0:
+                risk_ctrl.take_profit_levels[order.stock_code] = float(tp_price)
+        except Exception as e:
+            logger.warning(f"填充止盈水平失败(将由 check_take_profit_trigger 兜底): {e}")
+
+    def _sync_positions_to_risk_monitor(self, risk_monitor, account_id: str) -> None:
+        """R268-F1: 同步账户实时持仓到增强风控监控器 (集中度检查数据源).
+
+        从 AccountManager 活数据流取持仓并转换为 check_order_risk 期望的 dict 结构。
+        """
+        try:
+            if not account_id or not hasattr(risk_monitor, 'update_portfolio_positions'):
+                return
+            from core.trading.account_manager import AccountManager
+            account_manager = self.service_container.try_resolve(AccountManager)
+            if not account_manager:
+                return
+            positions = account_manager.get_account_positions(account_id) or []
+            risk_monitor.update_portfolio_positions([
+                {
+                    'stock_code': p.stock_code,
+                    'quantity': p.quantity,
+                    'price': p.current_price or p.open_price,
+                }
+                for p in positions
+            ])
+        except Exception as e:
+            logger.debug(f"同步持仓到风控监控器失败(降级跳过): {e}")
+
     def _get_trading_interface_for_account(self, account: Account) -> Optional[TradingInterface]:
         """
         根据账号获取交易接口（带缓存）
@@ -988,7 +1163,9 @@ class OrderExecutor:
                     order_id=order.order_id,
                     status=ExecutionStatus.FAILED,
                     message=f"风控检查未通过: {risk_check_result['reason']}",
-                    error_code="RISK_CHECK_FAILED"
+                    # R270: 保留具体风控错误码 (RISK_HALTED/DAILY_LOSS_LIMIT_EXCEEDED 等),
+                    # 原硬编码 RISK_CHECK_FAILED 会丢失熔断原因
+                    error_code=risk_check_result.get('error_code', 'RISK_CHECK_FAILED')
                 )
 
             # 1. 解析订单使用的账号
@@ -1182,7 +1359,8 @@ class OrderExecutor:
                                 order_id=order.order_id,
                                 status=ExecutionStatus.FAILED,
                                 message=f"风控检查未通过: {risk_check_result['reason']}",
-                                error_code="RISK_CHECK_FAILED"
+                                # R270: 保留具体风控错误码 (同 submit_order)
+                                error_code=risk_check_result.get('error_code', 'RISK_CHECK_FAILED')
                             ))
                             failed_count += 1
                             continue

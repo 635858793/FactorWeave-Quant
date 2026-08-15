@@ -26,6 +26,8 @@ import warnings
 import matplotlib.dates as mdates
 from core.performance import measure_performance
 from optimization.update_throttler import get_update_throttler
+# R292 涨跌停精确判定（按板块计算涨/跌停价，替代固定 4.8% 阈值）
+from core.rendering.limit_price import classify_limit_up_down, extract_symbol
 
 logger = logger
 
@@ -873,6 +875,8 @@ class ChartRenderer(QObject):
 
             up_color = style.get('up_color', '#ff0000')
             down_color = style.get('down_color', '#00ff00')
+            limit_up_color = style.get('limit_up_color', '#FF9800')    # 涨停橙色
+            limit_down_color = style.get('limit_down_color', '#AB47BC')  # 跌停紫色
             alpha = style.get('alpha', 1.0)
             # 修复：横坐标处理（支持datetime X轴）
             if x is not None:
@@ -886,22 +890,50 @@ class ChartRenderer(QObject):
                     logger.warning(f"datetime X轴转换失败: {e}，使用数字索引")
                     xvals = np.arange(len(data))
             else:
-                try:
-                    # 检查索引类型
-                    if hasattr(data.index, 'to_pydatetime'):
-                        xvals = mdates.date2num(data.index.to_pydatetime())
-                    elif pd.api.types.is_datetime64_any_dtype(data.index):
-                        # 如果是datetime类型但没有to_pydatetime方法
-                        xvals = mdates.date2num(pd.to_datetime(data.index).to_pydatetime())
-                    else:
-                        # 如果不是日期索引，使用序号
-                        logger.debug(f"索引类型不是日期类型: {type(data.index)}，使用序号作为X轴")
+                # R292 修复：xvals 必须与调用方 use_datetime_axis 严格一致。
+                # 原实现 use_datetime_axis=False（数字轴，UI set_xlim(0, len-1)）时，
+                # 若索引恰为 DatetimeIndex 仍会走 date2num(索引)（约 73 万级数值）
+                # → 蜡烛全部出视野，表现为偶发数据范围/展示错乱。
+                if use_datetime_axis:
+                    # datetime轴但无datetime列：尝试从datetime索引取
+                    try:
+                        if hasattr(data.index, 'to_pydatetime'):
+                            xvals = mdates.date2num(data.index.to_pydatetime())
+                        elif pd.api.types.is_datetime64_any_dtype(data.index):
+                            # 如果是datetime类型但没有to_pydatetime方法
+                            xvals = mdates.date2num(pd.to_datetime(data.index).to_pydatetime())
+                        else:
+                            # 如果不是日期索引，使用序号
+                            logger.debug(f"索引类型不是日期类型: {type(data.index)}，使用序号作为X轴")
+                            xvals = np.arange(len(data))
+                    except Exception as e:
+                        logger.debug(f"转换日期失败，使用序号作为X轴: {e}")
                         xvals = np.arange(len(data))
-                except Exception as e:
-                    logger.debug(f"转换日期失败，使用序号作为X轴: {e}")
+                else:
+                    # 数字索引X轴：一律使用序号，禁止 date2num(索引)
                     xvals = np.arange(len(data))
 
-            verts_up, verts_down, segments_up, segments_down = [], [], [], []
+            # R292 修复：A股四色分类（涨红/跌绿/涨停橙/跌停紫）。
+            # 涨停/跌停按板块精确判定：昨收 × (1 ± 幅度) 四舍五入到分 = 涨/跌停价，
+            # 收盘价等于涨/跌停价且封板才判定（core/rendering/limit_price.py）——
+            # 消除固定 4.8% 阈值对主板 5~9.9% 大阳线等的误判。
+            closes_arr = data['close'].values.astype(float)
+            opens_arr = data['open'].values.astype(float)
+            highs_arr = data['high'].values.astype(float)
+            lows_arr = data['low'].values.astype(float)
+            # R292-HV：列优先读取 limit 掩码。'limit_up'/'limit_down' 列由上游
+            # （rendering_mixin.update_chart）在降采样前按全量数据计算——降采样后
+            # 相邻 K 线并非真实相邻交易日，内部重判的"昨收"会错位导致四色漏判；
+            # 列缺失时回退内部按板块判定，兼容直接传数据的调用方。
+            if 'limit_up' in data.columns and 'limit_down' in data.columns:
+                is_limit_up = data['limit_up'].to_numpy(dtype=bool)
+                is_limit_down = data['limit_down'].to_numpy(dtype=bool)
+            else:
+                is_limit_up, is_limit_down = classify_limit_up_down(
+                    closes_arr, highs_arr, lows_arr, extract_symbol(data))
+
+            verts_up, verts_down, verts_limit_up, verts_limit_down = [], [], [], []
+            segments_up, segments_down, segments_limit_up, segments_limit_down = [], [], [], []
             for i, (idx, row) in enumerate(data.iterrows()):
                 try:
                     open_price = row['open']
@@ -910,7 +942,22 @@ class ChartRenderer(QObject):
                     low = row['low']
                     left = xvals[i] - 0.3
                     right = xvals[i] + 0.3
-                    if close >= open_price:
+                    if is_limit_up[i]:
+                        # 涨停（橙色）
+                        verts_limit_up.append([
+                            (left, open_price), (left, close), (right,
+                                                                close), (right, open_price)
+                        ])
+                        segments_limit_up.append([(xvals[i], low), (xvals[i], high)])
+                    elif is_limit_down[i]:
+                        # 跌停（紫色）
+                        verts_limit_down.append([
+                            (left, open_price), (left, close), (right,
+                                                                close), (right, open_price)
+                        ])
+                        segments_limit_down.append(
+                            [(xvals[i], low), (xvals[i], high)])
+                    elif close >= open_price:
                         verts_up.append([
                             (left, open_price), (left, close), (right,
                                                                 close), (right, open_price)
@@ -940,6 +987,20 @@ class ChartRenderer(QObject):
                     verts_down, facecolor=down_color, edgecolor=down_color, linewidth=1, alpha=alpha)
                 ax.add_collection(collection_down)
 
+            if verts_limit_up:
+                # 涨停（橙色）：空心 + 加粗边框突出
+                collection_limit_up = PolyCollection(
+                    verts_limit_up, facecolor='none', edgecolor=limit_up_color,
+                    linewidth=1.4, alpha=alpha)
+                ax.add_collection(collection_limit_up)
+
+            if verts_limit_down:
+                # 跌停（紫色）：空心 + 加粗边框突出
+                collection_limit_down = PolyCollection(
+                    verts_limit_down, facecolor='none', edgecolor=limit_down_color,
+                    linewidth=1.4, alpha=alpha)
+                ax.add_collection(collection_limit_down)
+
             if segments_up:  # 上涨影线
                 collection_shadow_up = LineCollection(
                     segments_up, colors=up_color, linewidth=1, alpha=alpha)
@@ -949,6 +1010,16 @@ class ChartRenderer(QObject):
                 collection_shadow_down = LineCollection(
                     segments_down, colors=down_color, linewidth=1, alpha=alpha)
                 ax.add_collection(collection_shadow_down)
+
+            if segments_limit_up:  # 涨停影线（加粗）
+                collection_shadow_limit_up = LineCollection(
+                    segments_limit_up, colors=limit_up_color, linewidth=1.4, alpha=alpha)
+                ax.add_collection(collection_shadow_limit_up)
+
+            if segments_limit_down:  # 跌停影线（加粗）
+                collection_shadow_limit_down = LineCollection(
+                    segments_limit_down, colors=limit_down_color, linewidth=1.4, alpha=alpha)
+                ax.add_collection(collection_shadow_limit_down)
 
             ax.autoscale_view()
         except Exception as e:
@@ -996,6 +1067,8 @@ class ChartRenderer(QObject):
         """
         up_color = style.get('up_color', '#ff0000')
         down_color = style.get('down_color', '#00ff00')
+        limit_up_color = style.get('limit_up_color', '#FF9800')    # 涨停橙色
+        limit_down_color = style.get('limit_down_color', '#AB47BC')  # 跌停紫色
         alpha = style.get('volume_alpha', 0.5)
 
         # 横坐标（与K线图保持一致）
@@ -1008,7 +1081,9 @@ class ChartRenderer(QObject):
             except Exception as e:
                 logger.warning(f"成交量datetime X轴转换失败: {e}，使用数字索引")
                 xvals = np.arange(len(data))
-        elif isinstance(data.index, pd.DatetimeIndex):
+        elif use_datetime_axis and isinstance(data.index, pd.DatetimeIndex):
+            # R292 修复：仅 datetime 轴才允许 date2num(索引)；数字轴一律序号，
+            # 否则与K线轴（序号）不一致且 date2num 数值出视野
             xvals = mdates.date2num(data.index.to_pydatetime())
         else:
             xvals = np.arange(len(data))
@@ -1031,10 +1106,17 @@ class ChartRenderer(QObject):
         lefts = xvals - bar_width / 2
         rights = xvals + bar_width / 2
 
-        # 向量化判断涨跌
+        # 向量化判断涨跌（R292：A股四色，涨停/跌停与K线同规则——
+        # 按板块精确涨/跌停价，core/rendering/limit_price.py）
+        highs = data['high'].values
+        lows = data['low'].values
+        is_limit_up, is_limit_down = classify_limit_up_down(
+            closes, highs, lows, extract_symbol(data))
         is_up = closes >= opens
-        up_indices = np.where(is_up)[0]
-        down_indices = np.where(~is_up)[0]
+        up_indices = np.where(is_up & ~is_limit_up & ~is_limit_down)[0]
+        down_indices = np.where((~is_up) & ~is_limit_up & ~is_limit_down)[0]
+        limit_up_indices = np.where(is_limit_up)[0]
+        limit_down_indices = np.where(is_limit_down)[0]
 
         # 性能优化：完全向量化构建，直接使用numpy数组（PolyCollection支持）
         def build_volume_verts(indices):
@@ -1055,6 +1137,8 @@ class ChartRenderer(QObject):
 
         verts_up = build_volume_verts(up_indices)
         verts_down = build_volume_verts(down_indices)
+        verts_limit_up = build_volume_verts(limit_up_indices)
+        verts_limit_down = build_volume_verts(limit_down_indices)
         # 性能优化：检查数组长度而不是转换为bool（避免numpy警告）
         if len(verts_up) > 0:
             collection_up = PolyCollection(
@@ -1064,22 +1148,34 @@ class ChartRenderer(QObject):
             collection_down = PolyCollection(
                 verts_down, facecolor=down_color, edgecolor='none', alpha=alpha)
             ax.add_collection(collection_down)
+        if len(verts_limit_up) > 0:
+            # 涨停柱（橙色）
+            collection_limit_up = PolyCollection(
+                verts_limit_up, facecolor=limit_up_color, edgecolor='none', alpha=alpha)
+            ax.add_collection(collection_limit_up)
+        if len(verts_limit_down) > 0:
+            # 跌停柱（紫色）
+            collection_limit_down = PolyCollection(
+                verts_limit_down, facecolor=limit_down_color, edgecolor='none', alpha=alpha)
+            ax.add_collection(collection_limit_down)
         # 性能优化：移除autoscale_view()调用，由调用方统一处理
         # ax.autoscale_view()  # 已移除，在rendering_mixin中统一调用
 
-    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None):
+    def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):
         """高性能线图绘制
         Args:
             ax: matplotlib轴对象
             data: 数据序列
             style: 样式字典
+            x: 可选，X轴数据（与其他渲染器接口对齐；为None时按索引/日期自动推导）
+            use_datetime_axis: 是否使用datetime X轴（预留，与其他渲染器对齐）
         """
         try:
-            self._render_line_efficient(ax, data, style or {})
+            self._render_line_efficient(ax, data, style or {}, x)
         except Exception as e:
             self.render_error.emit(f"绘制线图失败: {str(e)}")
 
-    def _render_line_efficient(self, ax, data: pd.Series, style: Dict[str, Any]):
+    def _render_line_efficient(self, ax, data: pd.Series, style: Dict[str, Any], x: np.ndarray = None):
         """高效渲染线图"""
         color = style.get('color', '#1976d2')
         linewidth = style.get('linewidth', 0.4)
@@ -1087,7 +1183,11 @@ class ChartRenderer(QObject):
         label = style.get('label', '')
 
         # 处理不同的数据类型
-        if isinstance(data, pd.Series):
+        if x is not None:
+            # 调用方显式传入X轴数据（等距序号），直接对齐使用
+            y_values = data.values if hasattr(data, 'values') else np.asarray(data)
+            x_values = x
+        elif isinstance(data, pd.Series):
             # pandas Series
             y_values = data.values
             if data.index.equals(pd.RangeIndex(start=0, stop=len(data))):

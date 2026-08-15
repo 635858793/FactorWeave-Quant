@@ -9,7 +9,7 @@ from loguru import logger
 import threading
 import time
 import re
-from typing import Dict, Any, Optional, List, Callable, Set, Union
+from typing import Dict, Any, Optional, List, Callable, Set, Union, Tuple
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
@@ -22,6 +22,37 @@ import os
 import traceback
 
 from ..database.unified_sqlite_access import UnifiedSQLiteAccess
+
+
+def _build_data_source_router():
+    """从系统配置构造 DataSourceRouter（R275 扩展: 健康检查间隔 + 熔断阈值可配置化）
+
+    读取 DataConfig（config/data 段）中的 health_check_interval 与 circuit_* 字段，
+    配置缺失/异常时回退到 DataSourceRouter 默认值，不影响启动。
+    """
+    from ..data_source_router import DataSourceRouter, CircuitBreakerConfig
+    from utils.config_types import DataConfig
+
+    data_config = DataConfig()
+    try:
+        from core.config import get_config_manager
+        config_mgr = get_config_manager()
+        data_cfg = config_mgr.get('data')
+        if isinstance(data_cfg, dict):
+            data_config = DataConfig.from_dict(data_cfg)
+    except Exception as e:
+        logger.warning(f"读取数据源路由配置失败，使用默认值: {e}")
+
+    return DataSourceRouter(
+        health_check_interval=data_config.health_check_interval,
+        circuit_breaker_config=CircuitBreakerConfig(
+            failure_threshold=data_config.circuit_failure_threshold,
+            failure_rate_threshold=data_config.circuit_failure_rate,
+            recovery_timeout_ms=data_config.circuit_recovery_timeout_ms,
+            half_open_max_calls=data_config.circuit_half_open_max_calls,
+            sliding_window_size=data_config.circuit_sliding_window_size,
+        )
+    )
 
 try:
     from ..events import EventBus, DataUpdateEvent
@@ -232,6 +263,10 @@ class UnifiedDataManager:
     10. SQLite数据库支持
     """
 
+    # R285 修复4：DB 直读质量门槛（0-100 口径，与落库准入阈值一致）。
+    # DB 命中但质量分低于该值时视为"低质量单份数据"，触发回源重拉。
+    _DB_QUALITY_MIN_SCORE = 60.0
+
     def __init__(self, service_container: ServiceContainer = None, event_bus: EventBus = None, max_workers: int = 3):
         """
         初始化统一数据管理器
@@ -258,6 +293,13 @@ class UnifiedDataManager:
         self._request_lock = threading.Lock()
 
         self._cache_ttl = 300  # 5分钟缓存TTL
+
+        # R263 增量更新状态：防止无谓的重复联网拉取
+        # _kdata_history_exhausted: {(asset,freq) -> datetime} 历史已到尽头（再往前拉无数据）
+        # _kdata_incremental_checked: {(asset,freq) -> datetime} 最近一次增量检查时间（TTL内不重复）
+        self._kdata_history_exhausted: Dict[str, datetime] = {}
+        self._kdata_incremental_checked: Dict[str, datetime] = {}
+        self._kdata_incremental_ttl = 6 * 3600  # 增量检查间隔 6 小时
 
         # R238-P1-3 修复: clear_cache/_get_from_cache 依赖的缓存属性必须在 __init__ 定义,
         # 否则 dispose 调用 clear_cache 时抛 AttributeError (生产关闭路径必崩)
@@ -357,8 +399,9 @@ class UnifiedDataManager:
             from ..tet_data_pipeline import TETDataPipeline
             from ..data_source_router import DataSourceRouter
 
-            # 创建数据源路由器
-            data_source_router = DataSourceRouter()
+            # 创建数据源路由器（R275 扩展: 从配置读取健康检查间隔/熔断阈值；
+            # R279 改为优先复用 DI 容器单例，消除实例分裂）
+            data_source_router = self._resolve_or_create_data_source_router()
 
             # 初始化TET管道
             self.tet_pipeline = TETDataPipeline(data_source_router)
@@ -650,49 +693,70 @@ class UnifiedDataManager:
             logger.warning(f"⚠️ StockService初始化失败: {e}")
 
     def _get_quality_score_from_cache(self, symbol: str, frequency: str, 
-                                       data_source: str, check_date: str) -> Optional[float]:
+                                       data_source: str = '', check_date: str = '') -> Optional[float]:
         """
         从缓存获取质量评分
-        
+
+        R287 P0-1 修复：缓存键统一为 symbol+frequency。读路径 _get_db_quality_score
+        仅按 symbol+frequency 查询"最近一次质量分"（SQL 不区分 data_source/check_date），
+        原 4 元组 key 与读路径不匹配导致缓存从未命中、每次直查 DB。data_source/check_date
+        参数保留仅为兼容写路径调用点，实际不再参与 key 计算。
+
         Args:
             symbol: 股票代码
             frequency: 频率
-            data_source: 数据源
-            check_date: 检查日期
-            
+            data_source: 数据源（兼容保留，不参与 key）
+            check_date: 检查日期（兼容保留，不参与 key）
+
         Returns:
             质量评分，如果缓存不存在或已过期则返回None
         """
-        cache_key = f"{symbol}_{frequency}_{data_source}_{check_date}"
-        
-        with self._quality_cache_lock:
-            if cache_key in self._quality_score_cache:
-                cached_data = self._quality_score_cache[cache_key]
-                if (datetime.now() - cached_data['timestamp']).seconds < self._quality_cache_ttl:
+        cache = getattr(self, '_quality_score_cache', None)
+        if cache is None:
+            return None
+        lock = getattr(self, '_quality_cache_lock', None)
+        if lock is None:
+            return None
+        ttl = getattr(self, '_quality_cache_ttl', 300)
+        cache_key = f"{symbol}_{frequency}"
+
+        with lock:
+            if cache_key in cache:
+                cached_data = cache[cache_key]
+                if (datetime.now() - cached_data['timestamp']).total_seconds() < ttl:
                     logger.debug(f"[质量评分缓存] 命中缓存: {cache_key}")
                     return cached_data['score']
                 else:
-                    del self._quality_score_cache[cache_key]
+                    del cache[cache_key]
                     logger.debug(f"[质量评分缓存] 缓存过期: {cache_key}")
-        
+
         return None
 
     def _set_quality_score_to_cache(self, symbol: str, frequency: str, 
-                                    data_source: str, check_date: str, score: float):
+                                    data_source: str = '', check_date: str = '', score: float = None):
         """
         将质量评分存入缓存
-        
+
+        R287 P0-1 修复：与 _get_quality_score_from_cache 对齐，key 统一为 symbol+frequency
+        （语义即"该 symbol+frequency 最近一次质量分"，data_source/check_date 不再参与）。
+
         Args:
             symbol: 股票代码
             frequency: 频率
-            data_source: 数据源
-            check_date: 检查日期
+            data_source: 数据源（兼容保留，不参与 key）
+            check_date: 检查日期（兼容保留，不参与 key）
             score: 质量评分
         """
-        cache_key = f"{symbol}_{frequency}_{data_source}_{check_date}"
-        
-        with self._quality_cache_lock:
-            self._quality_score_cache[cache_key] = {
+        cache = getattr(self, '_quality_score_cache', None)
+        if cache is None:
+            return
+        lock = getattr(self, '_quality_cache_lock', None)
+        if lock is None:
+            return
+        cache_key = f"{symbol}_{frequency}"
+
+        with lock:
+            cache[cache_key] = {
                 'score': score,
                 'timestamp': datetime.now()
             }
@@ -722,7 +786,9 @@ class UnifiedDataManager:
                 plugin_manager = PluginManager()
                 logger.warning("使用新创建的PluginManager实例（非单例）")
 
-            data_source_router = DataSourceRouter()
+            # 创建数据源路由器（R275 扩展: 从配置读取健康检查间隔/熔断阈值；
+            # R279 改为优先复用 DI 容器单例，消除实例分裂）
+            data_source_router = self._resolve_or_create_data_source_router()
             tet_pipeline = TETDataPipeline(data_source_router)
 
             # 创建UniPluginDataManager
@@ -885,9 +951,27 @@ class UnifiedDataManager:
                 df = self._get_kdata_from_duckdb(stock_code, period, count, asset_type=asset_type)
 
                 if not df.empty:
-                    logger.info(f"从DuckDB获取数据成功: {stock_code} ({asset_type.value}), 记录数={len(df)}")
-                    self._cache_data(cache_key, df)
-                    return df
+                    # R285 修复4：DB 直读质量校验——DB 只有一份低质量数据时，
+                    # 无条件返回会让坏数据直达图表。识别后置空走插件补齐链路重拉
+                    # （原 R264 只处理"空"不处理"低质量"，此处补全）。
+                    from core.plugin_types import Period
+                    frequency = Period.to_duckdb_frequency(period)
+                    db_score = self._get_db_quality_score(stock_code, frequency, asset_type)
+                    if db_score is not None and db_score < self._DB_QUALITY_MIN_SCORE:
+                        logger.warning(f"DB中 {stock_code} ({frequency}) 数据质量分偏低 "
+                                       f"{db_score:.1f} < {self._DB_QUALITY_MIN_SCORE}，触发回源重拉")
+                        df = pd.DataFrame()
+                    else:
+                        # R263 增量更新：DB 命中后按需补齐（隔天增量 / 历史不足），
+                        # 修复"隔天数据不更新"与"重启后重新联网拉全量"两个缺陷
+                        merged_df = self._incremental_fill_kdata(stock_code, period, count, df, asset_type)
+                        if merged_df is not None and not merged_df.empty:
+                            df = merged_df
+                        if len(df) > count:
+                            df = df.tail(count).reset_index(drop=True)
+                        logger.info(f"从DuckDB获取数据成功: {stock_code} ({asset_type.value}), 记录数={len(df)}")
+                        self._cache_data(cache_key, df)
+                        return df
                 logger.warning(f"DuckDB中没有数据，尝试通过数据源插件补齐: {stock_code} ({asset_type.value})")
             else:
                 logger.warning("DuckDB不可用，尝试通过数据源插件补齐")
@@ -895,36 +979,18 @@ class UnifiedDataManager:
             # 3. 插件补齐 + 落库（DB缺失数据的回退链路，补齐后写入historical_kline_data）
             if df.empty:
                 try:
-                    fallback_df = self._fetch_kdata_from_tet(stock_code, period, count, asset_type)
+                    fallback_df, plugin_id = self._fetch_kdata_from_tet(stock_code, period, count, asset_type)
                     if fallback_df is not None and not fallback_df.empty:
                         df = fallback_df
-                        # 落库（统一表名 historical_kline_data）
+                        # 落库（统一表名 historical_kline_data，INSERT OR REPLACE 幂等）
                         try:
                             if self.asset_manager is not None:
-                                persist_df = df.copy()
-                                # 时间列统一为timestamp（DuckDB K线表结构）
-                                if 'timestamp' not in persist_df.columns:
-                                    if 'datetime' in persist_df.columns:
-                                        persist_df['timestamp'] = pd.to_datetime(persist_df['datetime'])
-                                    elif 'date' in persist_df.columns:
-                                        persist_df['timestamp'] = pd.to_datetime(persist_df['date'])
-                                # 补齐关键列，保证落库后可按symbol/frequency查询
-                                if 'symbol' not in persist_df.columns:
-                                    persist_df['symbol'] = stock_code
-                                if 'frequency' not in persist_df.columns:
-                                    try:
-                                        from core.plugin_types import Period
-                                        persist_df['frequency'] = Period.to_duckdb_frequency(period)
-                                    except Exception:
-                                        pass
-                                if 'data_source' not in persist_df.columns:
-                                    persist_df['data_source'] = 'tet_plugin'
-                                self.asset_manager.store_standardized_data(
-                                    persist_df, asset_type, DataType.HISTORICAL_KLINE)
+                                self._persist_kdata_to_duckdb(df, stock_code, period, asset_type,
+                                                              data_source=plugin_id)
                         except Exception as e:
                             logger.warning(f"补齐数据落库失败: {stock_code} - {e}")
                         self._cache_data(cache_key, df)
-                        logger.info(f"插件补齐并落库成功: {stock_code} ({asset_type.value}), 记录数={len(df)}")
+                        logger.info(f"插件补齐并落库成功: {stock_code} ({asset_type.value}), 来源={plugin_id}, 记录数={len(df)}")
                         return df
                 except Exception as e:
                     logger.error(f"插件补齐K线数据失败: {stock_code} - {e}")
@@ -936,38 +1002,289 @@ class UnifiedDataManager:
             logger.error(f"获取K线数据失败: {stock_code} ({asset_type.value}) - {e}")
             return pd.DataFrame()
 
+    def _persist_kdata_to_duckdb(self, df: pd.DataFrame, stock_code: str, period: str,
+                                 asset_type: AssetType, data_source: Optional[str] = None) -> None:
+        """R263: K线数据统一落库（统一表名 historical_kline_data，INSERT OR REPLACE 幂等）
+
+        get_kdata 全量补齐与 _incremental_fill_kdata 增量合并均复用此方法，
+        保证"获取后必入库、重复入库幂等"。
+
+        R275 修复：
+        - data_source 支持真实插件 id 溯源（TET failover 成功源），替代恒硬编码 'tet_plugin'；
+        - 兼容插件返回的 datetime 索引 df（东财/baostock 均 set_index('datetime')），
+          否则 timestamp 列缺失 → 违反 NOT NULL 约束 → 落库失败。
+        """
+        if df is None or df.empty or self.asset_manager is None:
+            return
+        persist_df = df.copy()
+        # 时间列统一为timestamp（DuckDB K线表结构）
+        if 'timestamp' not in persist_df.columns:
+            # 兼容插件返回的 datetime 索引（datetime 在 index 而非 columns）
+            if 'datetime' not in persist_df.columns and 'date' not in persist_df.columns:
+                if isinstance(persist_df.index, pd.DatetimeIndex) or persist_df.index.name in ('datetime', 'date'):
+                    persist_df = persist_df.reset_index()
+                    # R277: 无命名 DatetimeIndex reset_index 后新列为 'index'，
+                    # 统一改名为 datetime，否则 timestamp 无法生成 → 落库数据无时间戳
+                    if 'index' in persist_df.columns:
+                        persist_df = persist_df.rename(columns={'index': 'datetime'})
+            # R290: 新增 timestamp 后删除 datetime/date 列，避免 DataFrame 同时携带
+            # datetime+timestamp 两列，被 asset_database_manager._filter_dataframe_columns
+            # 的 datetime→timestamp 映射再次 rename 成重复列 → DuckDB 报
+            # "Binder Error: Duplicate column name timestamp in INSERT"。
+            if 'datetime' in persist_df.columns:
+                persist_df['timestamp'] = pd.to_datetime(persist_df['datetime'])
+                persist_df = persist_df.drop(columns=['datetime'])
+            elif 'date' in persist_df.columns:
+                persist_df['timestamp'] = pd.to_datetime(persist_df['date'])
+                persist_df = persist_df.drop(columns=['date'])
+        # 补齐关键列，保证落库后可按symbol/frequency查询
+        # R291 修复：列"存在但全为 NaN"（如增量行缺 symbol）时原判断不生效，
+        # symbol/data_source 以 NULL 直插违反 NOT NULL 约束 → 改用 fillna 兜底。
+        if 'symbol' in persist_df.columns:
+            persist_df['symbol'] = persist_df['symbol'].fillna(stock_code)
+        else:
+            persist_df['symbol'] = stock_code
+        if 'frequency' not in persist_df.columns:
+            try:
+                from core.plugin_types import Period
+                persist_df['frequency'] = Period.to_duckdb_frequency(period)
+            except Exception:
+                pass
+        if 'data_source' in persist_df.columns:
+            persist_df['data_source'] = persist_df['data_source'].fillna(data_source or 'tet_plugin')
+        else:
+            persist_df['data_source'] = data_source or 'tet_plugin'
+        # R289: 落库关键节点计时（对齐 asset_database_manager._upsert_data 的
+        # write_duration/write_speed 模式），用于排查"获取快/落库慢"的性能瓶颈。
+        persist_start = time.time()
+        try:
+            self.asset_manager.store_standardized_data(
+                persist_df, asset_type, DataType.HISTORICAL_KLINE)
+            persist_duration = time.time() - persist_start
+            persist_speed = len(persist_df) / persist_duration if persist_duration > 0 else 0
+            if persist_duration > 1.0:
+                logger.warning(
+                    f"[K线落库] 写入较慢: {stock_code} {period}, "
+                    f"{len(persist_df)}行, 耗时: {persist_duration:.2f}秒, 速度: {persist_speed:.1f}行/秒")
+            else:
+                logger.debug(
+                    f"[K线落库] {stock_code} {period} 成功写入 {len(persist_df)} 行, "
+                    f"耗时: {persist_duration:.2f}秒, 速度: {persist_speed:.1f}行/秒")
+        except Exception:
+            persist_duration = time.time() - persist_start
+            logger.error(
+                f"[K线落库] 失败: {stock_code} {period}, "
+                f"耗时: {persist_duration:.2f}秒, {len(persist_df)}行")
+            raise
+
+    def _resolve_or_create_data_source_router(self):
+        """R279：优先复用 DI 容器 DataSourceRouter 单例（消除 router 实例分裂）。
+
+        此前 UDM 初始化 tet_pipeline 用 _build_data_source_router() 自建 router，
+        与 service_bootstrap 注册的 DI 单例是不同实例 → mark_unavailable 写在
+        UDM 实例 B 上，走到实例 A/C/D 的请求看不到熔断状态，切换股票后失效。
+        统一为容器单例后，熔断/健康状态跨服务、跨请求共享。
+        """
+        try:
+            from ..data_source_router import DataSourceRouter
+            if (self.service_container is not None
+                    and self.service_container.is_registered(DataSourceRouter)):
+                return self.service_container.resolve(DataSourceRouter)
+        except Exception as e:
+            logger.warning(f"从容器获取 DataSourceRouter 失败，回退自建: {e}")
+        return _build_data_source_router()
+
+    def _get_enhanced_quality_monitor(self):
+        """R278：惰性获取增强数据质量监控器（DI 单例，未注册/不可用时返回 None）"""
+        try:
+            from ..containers import get_service_container
+            from core.services.enhanced_data_quality_monitor import EnhancedDataQualityMonitor
+            container = get_service_container()
+            if container is None or not container.is_registered(EnhancedDataQualityMonitor):
+                return None
+            return container.resolve(EnhancedDataQualityMonitor)
+        except Exception as e:
+            logger.debug(f"获取增强数据质量监控器失败: {e}")
+            return None
+
+    def _incremental_fill_kdata(self, stock_code: str, period: str, count: int,
+                                db_df: pd.DataFrame,
+                                asset_type: AssetType) -> Optional[pd.DataFrame]:
+        """R263 增量更新：DB 命中后按需补齐缺口数据，合并去重并落库
+
+        场景A（隔天增量）：DB 最新K线日期 < 今天 → 只拉最新日期之后的新K线
+             （东财 beg=最新日期+1天，TET管道 L523-524 透传 start_date）
+        场景B（历史不足）：DB 条数 < count → 只拉 DB 最早日期之前的缺口历史
+             （东财 end=最早日期-1天，透传 end_date）
+        合并结果按 datetime 去重升序；有新增则 upsert 回库（幂等）。
+        拉取失败/无新增时静默返回 None，不影响主流程返回 DB 数据。
+
+        Args:
+            stock_code: 股票代码
+            period: 周期
+            count: 请求条数
+            db_df: DB 已读到的 K 线（升序）
+            asset_type: 资产类型
+
+        Returns:
+            Optional[pd.DataFrame]: 增量合并后的完整数据（升序）；无需增量或失败返回 None
+        """
+        try:
+            if db_df is None or db_df.empty or 'datetime' not in db_df.columns:
+                return None
+
+            ts_series = pd.to_datetime(db_df['datetime'])
+            latest_ts = pd.Timestamp(ts_series.max())
+            earliest_ts = pd.Timestamp(ts_series.min())
+
+            # 增量检查频率限制：TTL 内不重复联网检查（隔天更新自然被覆盖）
+            try:
+                from core.plugin_types import Period
+                freq = Period.to_duckdb_frequency(period)
+            except Exception:
+                freq = str(period)
+            check_key = f"{asset_type.value}|{stock_code}|{freq}"
+            now = datetime.now()
+            last_check = self._kdata_incremental_checked.get(check_key)
+            if last_check and (now - last_check).total_seconds() < self._kdata_incremental_ttl:
+                return None
+            self._kdata_incremental_checked[check_key] = now
+
+            today = datetime.now().date()
+            # R287 P2-a：记录 (df, plugin_id) 元组，落库时透传真实成功源
+            new_parts: List[Tuple[pd.DataFrame, Optional[str]]] = []
+
+            # 场景A：隔天增量（DB 最新K线日期 < 今天）
+            if latest_ts.date() < today:
+                start_date = (latest_ts + pd.Timedelta(days=1)).strftime('%Y%m%d')
+                logger.info(f"[增量更新-隔天] {stock_code} {period} 最新={latest_ts.date()} < 今天={today}，"
+                            f"拉取 {start_date} 起的新数据")
+                new_df, new_plugin_id = self._fetch_kdata_from_tet(
+                    stock_code, period, count, asset_type, start_date=start_date)
+                if new_df is not None and not new_df.empty:
+                    new_parts.append((new_df, new_plugin_id))
+
+            # 场景B：历史补齐（DB 条数 < count，且历史未耗尽）
+            if len(db_df) < count and not self._kdata_history_exhausted.get(check_key):
+                end_date = (earliest_ts - pd.Timedelta(days=1)).strftime('%Y%m%d')
+                logger.info(f"[增量更新-历史] {stock_code} {period} DB={len(db_df)}条 < count={count}，"
+                            f"拉取 {end_date} 前的缺口历史")
+                history_df, history_plugin_id = self._fetch_kdata_from_tet(
+                    stock_code, period, count, asset_type, end_date=end_date)
+                if history_df is not None and not history_df.empty:
+                    new_parts.append((history_df, history_plugin_id))
+
+            if not new_parts:
+                return None
+
+            # 合并（以 datetime 为键，升序排列）
+            merged = pd.concat([db_df] + [part[0] for part in new_parts], ignore_index=True)
+            merged['datetime'] = pd.to_datetime(merged['datetime'])
+
+            # R291 修复：列补齐提前到 all_new 切片之前。
+            # 原 R290 补齐只作用于重新赋值后的 merged，而落库用的是先前的
+            # all_new 切片（缺少 symbol/code/data_source/adj_type 补齐与 NaN 兜底），
+            # 导致新增行 symbol 为 NULL 违反 NOT NULL 约束、整批落库失败。
+            # 补齐后 all_new 与 merged 均含完整列，切片/落库一致。
+            persist_source = next((pid for _, pid in reversed(new_parts) if pid), None)
+            for _col, _default in (('adj_type', 'none'), ('adj_source', 'plugin'),
+                                   ('data_quality_score', 0.0),
+                                   ('code', stock_code), ('symbol', stock_code),
+                                   ('data_source', persist_source or 'tet_plugin')):
+                if _col not in merged.columns:
+                    merged[_col] = _default
+                else:
+                    merged[_col] = merged[_col].fillna(_default)
+
+            # R292 修复：日线/周/月线按日期粒度去重。
+            # 此前用精确 datetime 相等比较（isin），DB 存 00:00:00 而新拉取行带
+            # 时刻（如 15:00:00）或历史遗留分钟垃圾行时同日不去重 → 同日多行堆积，
+            # 日线展示"数据多但日期集中"。按日期粒度比较后同日只保留一行。
+            _day_level = freq in ('1d', '1w', '1M')
+            if _day_level:
+                db_keys = set(pd.to_datetime(ts_series).dt.date)
+                merged_dates = pd.to_datetime(merged['datetime']).dt.date
+                all_new = merged[~merged_dates.isin(db_keys)]
+            else:
+                db_keys = set(ts_series)
+                all_new = merged[~merged['datetime'].isin(db_keys)]
+            if all_new.empty:
+                # 无新增：若场景B曾拉取仍未扩展历史，标记历史尽头，避免重复全量拉取
+                if len(db_df) < count:
+                    self._kdata_history_exhausted[check_key] = now
+                    logger.info(f"[增量更新] {stock_code} {period} 历史已到尽头，短期内不再拉取")
+                return None
+
+            merged['_r292_dup_key'] = (
+                pd.to_datetime(merged['datetime']).dt.date if _day_level
+                else merged['datetime'])
+            merged = (merged.drop_duplicates(subset=['_r292_dup_key'], keep='last')
+                      .drop(columns=['_r292_dup_key'])
+                      .sort_values(by='datetime', ascending=True)
+                      .reset_index(drop=True))
+
+            # 有新增 → 落库（R287 P2-a 修复）
+            # 原实现：a) 落库 merged 全量（DB 已有行被重复 upsert，白写）；b) 未传
+            # data_source → _persist_kdata_to_duckdb 恒回退 'tet_plugin'，与 DB 中
+            # 既有 (symbol, 'tongdaxin', ...) 主键不匹配 → 主键错配插入重复行。
+            # 现改为：只插新增行 all_new + 透传 TET failover 真实成功源 plugin_id。
+            try:
+                self._persist_kdata_to_duckdb(
+                    all_new, stock_code, period, asset_type, data_source=persist_source)
+            except Exception as e:
+                logger.warning(f"[增量更新] 落库失败: {stock_code} {period} - {e}")
+
+            logger.info(f"[增量更新] {stock_code} {period} 合并完成: {len(db_df)} → {len(merged)} 条")
+            return merged
+
+        except Exception as e:
+            logger.error(f"[增量更新] 失败: {stock_code} {period} - {e}")
+            return None
+
     def _fetch_kdata_from_tet(self, stock_code: str, period: str, count: int,
-                              asset_type: AssetType) -> Optional[pd.DataFrame]:
+                              asset_type: AssetType, start_date: str = None,
+                              end_date: str = None) -> Optional[Tuple[pd.DataFrame, Optional[str]]]:
         """
         通过TET数据管道从插件数据源补齐K线数据（DuckDB无数据时的网络回退）
+
+        R263 增量更新：支持 start_date/end_date 区间透传（TET管道 L523-524 →
+        插件适配器 get_kdata → 东财 beg/end 参数），仅拉取缺口数据。
+
+        R275 溯源：返回 (df, plugin_id)，plugin_id 为 TET failover 实际成功源
+        （source_info.provider / metadata.failover.successful_source），
+        供落库时 data_source 列记录真实来源，替代恒 'tet_plugin'。
 
         Args:
             stock_code: 股票代码（或其他资产代码）
             period: 周期
             count: 数据条数
             asset_type: 资产类型
+            start_date: 增量拉取起始日期（YYYYMMDD，东财 beg 格式；None 表示从头）
+            end_date: 增量拉取截止日期（YYYYMMDD，东财 end 格式；None 表示到最新）
 
         Returns:
-            Optional[pd.DataFrame]: 获取成功返回DataFrame，失败返回None（不抛出异常）
+            Optional[Tuple[pd.DataFrame, Optional[str]]]: (数据, 成功插件id)；失败返回 (None, None)
         """
         try:
             if not getattr(self, 'tet_enabled', False) or not getattr(self, 'tet_pipeline', None):
                 logger.warning(f"TET数据管道不可用，无法补齐K线数据: {stock_code}")
-                return None
+                return None, None
 
-            # 构造标准化查询（period传给query，count放extra_params）
+            # 构造标准化查询（period传给query，count放extra_params，增量区间透传）
             from core.tet_data_pipeline import StandardQuery
             query = StandardQuery(
                 symbol=stock_code,
                 asset_type=asset_type,
                 data_type=DataType.HISTORICAL_KLINE,
                 period=period,
+                start_date=start_date,
+                end_date=end_date,
                 extra_params={'count': count}
             )
 
             result = self.tet_pipeline.process(query)
             if result is None:
-                return None
+                return None, None
 
             # 兼容StandardData（.data字段为DataFrame）与直接DataFrame两种返回
             if hasattr(result, 'data'):
@@ -976,17 +1293,43 @@ class UnifiedDataManager:
                 df = result
             else:
                 logger.warning(f"TET返回了不支持的数据类型: {type(result)}，无法补齐: {stock_code}")
-                return None
+                return None, None
 
             if df is None or not isinstance(df, pd.DataFrame) or df.empty:
                 logger.warning(f"TET插件补齐数据为空: {stock_code}")
-                return None
+                return None, None
 
-            return df.copy()
+            # 提取实际成功的数据源插件id（用于落库溯源）
+            plugin_id = None
+            try:
+                if hasattr(result, 'source_info') and isinstance(result.source_info, dict):
+                    plugin_id = result.source_info.get('provider')
+                if not plugin_id and hasattr(result, 'metadata'):
+                    failover = result.metadata.get('failover', {})
+                    plugin_id = failover.get('successful_source') if isinstance(failover, dict) else None
+            except Exception:
+                plugin_id = None
+
+            # R291/R292 修复：TET 标准化（_standardize_data_types）与各插件（东财/sina等）
+            # 将 datetime/date set_index 到索引，导致后续 concat 合并时新增行 datetime 列
+            # 全为 NaN → 落库违反 NOT NULL 约束。原 R291 仅对 index.name 为
+            # ('datetime','date') 或 DatetimeIndex 时 reset_index()，但无命名 DatetimeIndex
+            # 会生成 'index' 列而非 'datetime'，sina 的 'date' 索引生成 'date' 列仍缺
+            # datetime → 偶发数据形态/范围错乱。统一走 _standardize_kdata_format 出口。
+            if 'datetime' not in df.columns:
+                try:
+                    standardized = self._standardize_kdata_format(df, stock_code)
+                    if (standardized is not None and not standardized.empty
+                            and 'datetime' in standardized.columns):
+                        df = standardized
+                except Exception as std_error:
+                    logger.warning(f"TET补齐数据标准化失败，保留原始形态: {stock_code} - {std_error}")
+
+            return df.copy(), plugin_id
 
         except Exception as e:
             logger.error(f"TET插件补齐K线数据失败: {stock_code} - {e}")
-            return None
+            return None, None
 
     def get_kline_data(self, stock_code: str, period: str = 'D', count: int = 365,
                        asset_type=None, **kwargs) -> pd.DataFrame:
@@ -1470,6 +1813,64 @@ class UnifiedDataManager:
             logger.error(f"从DuckDB获取{asset_type}资产列表失败: {e}")
             return pd.DataFrame()
 
+    def _get_db_quality_score(self, symbol: str, frequency: str,
+                              asset_type: AssetType = AssetType.STOCK_A) -> Optional[float]:
+        """R285 修复4：查询 data_quality_monitor 该 symbol+frequency 最近一次质量分
+
+        读前质量校验（DB 直读不再无条件信任）：
+        - 返回该 symbol+frequency 最近一次（MAX check_date）评估的质量分（0-100）
+        - 无评估记录返回 None（不触发回源，保持现状）
+        - 查询失败/DB 不可用返回 None（安全降级，不阻断）
+
+        R287 P0-1 修复：接通质量分缓存——先查 _get_quality_score_from_cache
+        （key=symbol+frequency，TTL=300s），命中则跳过 DB 查询；未命中才直查
+        data_quality_monitor，结果写回缓存。避免窗口内多次调用（get_kdata /
+        get_asset_data 主链路）反复全量直查 DB。
+        """
+        # P0-1：优先查缓存（symbol+frequency 统一 key）
+        cached = self._get_quality_score_from_cache(symbol, frequency)
+        if cached is not None:
+            logger.debug(f"[读前质量校验-缓存] 命中 {symbol}/{frequency}: score={cached}")
+            return cached
+
+        try:
+            if not self.duckdb_available or not self.duckdb_operations or self.asset_manager is None:
+                return None
+            database_path = self.asset_manager.get_database_path(asset_type)
+            _q_start = time.perf_counter()
+            result = self.duckdb_operations.execute_query(
+                database_path=database_path,
+                query="""
+                    SELECT quality_score FROM data_quality_monitor
+                    WHERE symbol = ? AND frequency = ?
+                    ORDER BY check_date DESC
+                    LIMIT 1
+                """,
+                params=[symbol, frequency]
+            )
+            _q_elapsed = (time.perf_counter() - _q_start) * 1000
+            logger.debug(f"[读前质量校验-DB] {symbol}/{frequency} 查询耗时 {_q_elapsed:.1f}ms")
+            if result is None or not getattr(result, 'success', False):
+                return None
+            data = getattr(result, 'data', None)
+            if data is None:
+                return None
+            if isinstance(data, pd.DataFrame):
+                if data.empty:
+                    return None
+                val = data['quality_score'].iloc[0]
+            else:
+                if not data:
+                    return None
+                val = data[0].get('quality_score') if isinstance(data[0], dict) else data[0][0]
+            score = float(val) if pd.notna(val) else None
+            if score is not None:
+                self._set_quality_score_to_cache(symbol, frequency, '', '', score)
+            return score
+        except Exception as e:
+            logger.debug(f"DB质量分查询失败: {symbol}/{frequency} - {e}")
+            return None
+
     def _get_kdata_from_duckdb(self, stock_code: str, period: str, count: int, data_source: str = None, asset_type: AssetType = None) -> pd.DataFrame:
         """优化：从DuckDB获取K线数据（使用视图自动选择最优质量数据）"""
         try:
@@ -1523,13 +1924,25 @@ class UnifiedDataManager:
                                 hkd.updated_at DESC
                         ) as quality_rank
                     FROM {table_name} hkd
-                    LEFT JOIN data_quality_monitor dqm ON (
-                        hkd.symbol = dqm.symbol 
-                        AND hkd.data_source = dqm.data_source 
-                        AND DATE(hkd.timestamp) = dqm.check_date
+                    -- R285 修复：JOIN 断链（与 unified_best_quality_kline 视图一致）——
+                    -- 原条件 DATE(hkd.timestamp) = dqm.check_date 中 check_date 为落库
+                    -- 评估当天日期，历史 K 线（timestamp=交易日）永远无法命中，质量分恒
+                    -- NULL → 回退硬编码数据源优先级。改为关联每 symbol+data_source+
+                    -- frequency 最近一次评估记录，使质量优选对历史数据真正生效。
+                    -- R287 P0-2：JOIN 目标改为物化表 monitor_latest（每 symbol+data_source+
+                    -- frequency 仅一行，落库时同步维护），消除每次查询的全表 GROUP BY 聚合。
+                    LEFT JOIN monitor_latest dqm ON (
+                        hkd.symbol = dqm.symbol
+                        AND hkd.data_source = dqm.data_source
                         AND hkd.frequency = dqm.frequency
                     )
+                    -- R292 修复：日线查询隔离分钟垃圾行。
+                    -- 根因：import_execution_engine 曾将分钟K线以 frequency='1d' 落库
+                    -- （_standardize_kline_data_fields 硬编码默认 '1d'），导致日线视图混入
+                    -- 大量同日期不同时刻（09:31~15:00）的分钟行 → 展示"数据多但日期集中"。
+                    -- 日线/周/月线的合法 timestamp 恒为 00:00:00，此处仅对 '1d' 做时刻过滤。
                     WHERE hkd.symbol = ? AND hkd.frequency = ?
+                      AND (hkd.frequency <> '1d' OR CAST(hkd.timestamp AS TIME) = TIME '00:00:00')
                 )
                 SELECT 
                     symbol as code, 
@@ -1545,11 +1958,14 @@ class UnifiedDataManager:
 
             try:
                 # 先尝试质量优选视图
+                _vq_start = time.perf_counter()
                 result = self.duckdb_operations.execute_query(
                     database_path=database_path,
                     query=view_query,
                     params=[stock_code, frequency, count]
                 )
+                _vq_elapsed = (time.perf_counter() - _vq_start) * 1000
+                logger.debug(f"[视图查询-DB] {stock_code}/{frequency} 耗时 {_vq_elapsed:.1f}ms")
 
                 if result.success and result.data is not None:
                     if isinstance(result.data, pd.DataFrame):
@@ -1559,18 +1975,23 @@ class UnifiedDataManager:
 
                     if not df.empty:
                         logger.info(f"[视图查询成功（质量优选）]: {stock_code}, frequency={frequency}, {len(df)} 条记录")
-                        # 为视图结果添加data_source列，默认值为'best_quality'
-                        df['data_source'] = 'best_quality'
+                        # R285 修复：不再把 data_source 强制覆盖为 'best_quality' 伪源。
+                        # 视图 SELECT hkd.* 已透传真实数据源，覆盖会污染溯源：
+                        # 增量合并（_incremental_fill_kdata）→ _persist_kdata_to_duckdb
+                        # 落库时 data_source 主键列保留伪值 → DB 出现 best_quality 假源。
+                        if 'data_source' not in df.columns:
+                            df['data_source'] = 'best_quality'
                         
                         # 仅缓存最新一条记录的评分（数据按timestamp DESC排序，iloc[0]即最新）
                         if 'quality_score' in df.columns and len(df) > 0:
                             latest_ts = df['datetime'].iloc[0]
                             latest_score = df['quality_score'].iloc[0]
                             check_date = pd.Timestamp(latest_ts).date() if pd.notna(latest_ts) else datetime.now().date()
+                            real_source = str(df['data_source'].iloc[0]) if 'data_source' in df.columns else 'best_quality'
                             self._set_quality_score_to_cache(
                                 symbol=stock_code,
                                 frequency=frequency,
-                                data_source='best_quality',
+                                data_source=real_source,
                                 check_date=check_date.isoformat(),
                                 score=float(latest_score) if pd.notna(latest_score) else 0.0
                             )
@@ -1599,6 +2020,8 @@ class UnifiedDataManager:
                     FROM historical_kline_data
                     WHERE symbol = ? 
                       AND frequency = ?
+                      -- R292 修复：与视图查询一致，日线隔离分钟垃圾行
+                      AND (frequency <> '1d' OR CAST(timestamp AS TIME) = TIME '00:00:00')
                     ORDER BY timestamp DESC 
                     LIMIT ?
                 """
@@ -1811,7 +2234,20 @@ class UnifiedDataManager:
                     return pd.DataFrame()
             else:
                 # 确保datetime列是datetime类型
-                df['datetime'] = pd.to_datetime(df['datetime'])
+                # R292 修复：数值型日期（如 20240814）会被 pd.to_datetime 按纳秒
+                # 时间戳解释为 1970-01-01 → 所有日期基本相同。先转字符串按
+                # YYYYMMDD 解析；同时清理上游 errors='coerce' 残留的 NaT 日期行。
+                _dt_series = df['datetime']
+                if pd.api.types.is_numeric_dtype(_dt_series):
+                    df['datetime'] = pd.to_datetime(
+                        _dt_series.astype(str), errors='coerce')
+                else:
+                    df['datetime'] = pd.to_datetime(_dt_series, errors='coerce')
+                _na_mask = df['datetime'].isna()
+                if _na_mask.any():
+                    logger.warning(
+                        f"K线数据包含 {int(_na_mask.sum())} 行无效datetime，已移除")
+                    df = df[~_na_mask]
                 # 修复：如果datetime同时是索引名，重置索引避免歧义
                 if df.index.name == 'datetime' or isinstance(df.index, pd.DatetimeIndex):
                     df = df.reset_index(drop=True)
@@ -2430,25 +2866,101 @@ class UnifiedDataManager:
                 count = extra_params.pop('count', None)
                 if count is not None:
                     extra_params['count'] = count
+
+                # R284 修复：K线主链路 DB 优先——切换股票时先查 DuckDB，
+                # DB 命中即返回（数据不满足 count 时由 _incremental_fill_kdata
+                # 自动回源补齐并更新数据库，复用 R263 增量闭环）；
+                # 仅 DB 空时才走 TET 网络管道。
+                # 背景：get_asset_data 原实现无任何 DB 查询，直接 tet_pipeline.process，
+                # TET 内存缓存键含 symbol（tet_data_pipeline.py L1252-1263）且 TTL 仅 5 分钟，
+                # 切换不同股票必然 miss → 每次都重新联网遍历数据源（DB 明明已落库 1,129,151 条）。
+                if (data_type == DataType.HISTORICAL_KLINE and self.duckdb_available
+                        and not extra_params.get('start_date') and not extra_params.get('end_date')):
+                    db_count = int(count or 365)
+                    db_df = self._get_kdata_from_duckdb(
+                        symbol, period, db_count, asset_type=asset_type)
+                    if not db_df.empty:
+                        # R285 修复4：DB 直读质量校验——DB 只有一份低质量数据时
+                        # 不直接返回（会让坏数据直达图表），置空走下方 TET 网络管道
+                        # 重拉并落库覆盖。
+                        from core.plugin_types import Period
+                        db_freq = Period.to_duckdb_frequency(period)
+                        db_score = self._get_db_quality_score(symbol, db_freq, asset_type)
+                        if db_score is not None and db_score < self._DB_QUALITY_MIN_SCORE:
+                            logger.warning(f" 主链路DB直读: {symbol} ({period}) 质量分偏低 "
+                                           f"{db_score:.1f}，改走TET网络管道重拉")
+                        else:
+                            # 数据不足/隔天增量：自动回源补齐 + 合并去重 + 落库更新
+                            merged_df = self._incremental_fill_kdata(
+                                symbol, period, db_count, db_df, asset_type)
+                            if merged_df is not None and not merged_df.empty:
+                                db_df = merged_df
+                            if len(db_df) > db_count:
+                                db_df = db_df.tail(db_count).reset_index(drop=True)
+                            logger.info(f" 主链路DB直读: {symbol} ({period}) | "
+                                        f"{len(db_df)} 条 | 免联网")
+                            return db_df
                 
                 query = StandardQuery(
                     symbol=symbol,
                     asset_type=asset_type,
                     data_type=data_type,
                     period=period,
+                    # R284: start_date/end_date 提为顶层字段——transform_query
+                    # (tet_data_pipeline.py L529-530) 只读 query.start_date/end_date，
+                    # 原实现仅放 extra_params 导致区间参数静默丢失。
+                    start_date=extra_params.get('start_date'),
+                    end_date=extra_params.get('end_date'),
                     extra_params=extra_params
                 )
 
                 result = self.tet_pipeline.process(query)
 
                 # 记录使用的数据源
+                data_source = None
                 if result and hasattr(result, 'source_info') and result.source_info:
-                    data_source = result.source_info.get('provider', 'Unknown')
+                    data_source = result.source_info.get('provider')
                     logger.info(f" TET数据获取成功: {symbol} | 数据源: {data_source} | 记录数: {len(result.data) if result.data is not None else 0}")
                 else:
                     logger.info(f" TET数据获取成功: {symbol} | 记录数: {len(result.data) if result.data is not None else 0}")
 
-                return result.data
+                # R277 修复：TET 成功获取的历史K线立即落库。
+                # 原实现仅 UDM.get_kdata 的 fallback 分支落库（_persist_kdata_to_duckdb），
+                # 而 UI 主链路（repository TET 模式 → AssetService → get_asset_data）成功后
+                # 直接返回不落库 → 重启后 DuckDB 仍无数据 → 每次都重新联网遍历数据源。
+                if (result and result.data is not None and not result.data.empty
+                        and data_type == DataType.HISTORICAL_KLINE):
+                    try:
+                        self._persist_kdata_to_duckdb(
+                            result.data, symbol, period, asset_type,
+                            data_source=data_source)
+                        logger.info(f" TET历史K线已落库: {symbol} ({period}) | "
+                                    f"{len(result.data)} 条 | 数据源: {data_source or 'Unknown'}")
+                    except Exception as persist_error:
+                        logger.warning(f" TET历史K线落库失败: {symbol} - {persist_error}")
+
+                    # R278 数据治理：TET 主链路灌入增强数据质量监控器（六维度评分 + 低分告警）。
+                    # 此前 monitor_data_quality 全项目零调用，监控器无真实数据可监控。
+                    try:
+                        from core.services.enhanced_data_quality_monitor import EnhancedDataQualityMonitor
+                        monitor = self._get_enhanced_quality_monitor()
+                        if monitor is not None:
+                            monitor.monitor_data_quality(
+                                data_source=data_source or 'tet_plugin',
+                                data_type='kline',
+                                data=result.data,
+                                symbol=symbol)
+                    except Exception as monitor_error:
+                        logger.debug(f"数据质量监控灌入失败: {symbol} - {monitor_error}")
+
+                # R292 B1：统一形态——TET 管道 _standardize_data_types 强制 datetime
+                # set_index 到索引（索引形态），直接返回会让 UI 判 'datetime' not in
+                # columns 走数字轴 + 渲染器 date2num(索引) 画蜡烛 → 蜡烛出视野、
+                # 图表范围偶发错乱。返回前统一还原为 datetime 列 + 数字索引。
+                try:
+                    return self._standardize_kdata_format(result.data, symbol)
+                except Exception:
+                    return result.data
 
             except Exception as e:
                 logger.warning(f" TET模式获取数据失败: {symbol} - {e}")
@@ -2805,17 +3317,36 @@ class UnifiedDataManager:
                 "最近2年": 365 * 2,
                 "最近3年": 365 * 3,
                 "最近5年": 365 * 5,
-                "全部": 99999999999  # 表示所有可用数据
+                "全部": None  # 表示所有可用数据（不限制日期范围）
             }
 
             # 获取天数，默认为365天（约1年）
-            count = time_range_map.get(time_range, 365)
+            days = time_range_map.get(time_range, 365)
 
-            logger.info(f"请求数据：代码={stock_code}, 类型={data_type}, 周期={actual_period}, 时间范围={count}天, 资产类型={asset_type.value}")
+            # R277 修复：时间范围语义由"条数"改为"自然日日期区间"。
+            # 原实现把"最近1年"直接映射为 count=365（条数语义），而 365 条日线 ≈ 1.4-1.5 自然年，
+            # 导致"最近1年"实际显示约 1.5 年数据（起点提前约 6 个月）。
+            # 修复：按周期把自然日换算为"覆盖该区间所需K线根数"作为 LIMIT 上限（adjusted_count），
+            # 并在 _get_kdata 返回后按日期区间精确裁剪，保证起点/终点与用户选择一致。
+            start_date = None
+            end_date = None
+            count = days
+            if days is not None:
+                from datetime import datetime, timedelta
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=days)
+                count = self._calc_period_adjusted_count(days, actual_period)
+                logger.info(f"请求数据：代码={stock_code}, 类型={data_type}, 周期={actual_period}, "
+                            f"时间范围={days}天 ({start_date.strftime('%Y-%m-%d')} ~ {end_date.strftime('%Y-%m-%d')}), "
+                            f"覆盖条数={count}, 资产类型={asset_type.value}")
+            else:
+                logger.info(f"请求数据：代码={stock_code}, 类型={data_type}, 周期={actual_period}, "
+                            f"时间范围=全部, 资产类型={asset_type.value}")
 
             if data_type == 'kdata':
-                # 获取K线数据（传递资产类型）
-                return await self._get_kdata(stock_code, period=actual_period, count=count, asset_type=asset_type)
+                # 获取K线数据（传递资产类型与日期区间）
+                return await self._get_kdata(stock_code, period=actual_period, count=count,
+                                             asset_type=asset_type, start_date=start_date, end_date=end_date)
             elif data_type == 'financial':
                 # 获取财务数据
                 return await self._get_financial_data(stock_code)
@@ -2891,14 +3422,17 @@ class UnifiedDataManager:
             return None
 
     async def _get_kdata(self, stock_code: str, period: str = 'D', count: int = 365,
-                         asset_type: AssetType = AssetType.STOCK_A) -> pd.DataFrame:
+                         asset_type: AssetType = AssetType.STOCK_A,
+                         start_date=None, end_date=None) -> pd.DataFrame:
         """获取K线数据（优化：支持多资产类型）
 
         Args:
             stock_code: 股票代码（或其他资产代码）
             period: 周期，如'D'、'W'、'M'
-            count: 获取的天数
+            count: 获取的条数（LIMIT 上限）
             asset_type: 资产类型（默认为股票）
+            start_date: R277 可选，日期区间起点（datetime/Timestamp/str），返回后按此精确裁剪
+            end_date: R277 可选，日期区间终点，返回后按此精确裁剪
 
         Returns:
             K线DataFrame
@@ -2911,7 +3445,8 @@ class UnifiedDataManager:
             chart_service = self.service_container.resolve(ChartService)
 
             if chart_service:
-                return await chart_service.get_kdata_async(stock_code, period, count, asset_type=asset_type)
+                df = await chart_service.get_kdata_async(stock_code, period, count, asset_type=asset_type)
+                return self._clip_kdata_by_date(df, start_date, end_date)
 
             # 如果没有ChartService，使用默认数据源
             # 注意：core.data_manager已迁移，使用当前实例
@@ -2919,7 +3454,8 @@ class UnifiedDataManager:
 
             if data_manager:
                 # 传递asset_type参数
-                return data_manager.get_kdata(stock_code, period, count, asset_type=asset_type)
+                df = data_manager.get_kdata(stock_code, period, count, asset_type=asset_type)
+                return self._clip_kdata_by_date(df, start_date, end_date)
 
             logger.error("无法获取K线数据：未找到数据服务")
             return pd.DataFrame()
@@ -2927,6 +3463,39 @@ class UnifiedDataManager:
         except Exception as e:
             logger.error(f"获取K线数据失败: {e}", exc_info=True)
             return pd.DataFrame()
+
+    @staticmethod
+    def _calc_period_adjusted_count(days: int, period: str) -> int:
+        """R277: 按周期把自然日天数换算为覆盖该区间的K线根数（LIMIT 上限，含冗余）
+
+        交易日约为自然日的 250/365 ≈ 0.685 倍，各周期每自然日的K线根数近似：
+        日线 0.7、周线 0.14、月线 0.03、60分钟 2.8、30分钟 5.6、15分钟 11、
+        5分钟 33、1分钟 165。取向上整数并保留冗余，确保 LIMIT 条数能覆盖
+        完整日期区间，随后由调用方按日期精确裁剪。
+        """
+        factor_map = {'1m': 170, '5m': 35, '15m': 12, '30m': 6, '1H': 3,
+                      'D': 1, 'W': 0.2, 'M': 0.05}
+        factor = factor_map.get(period, 1)
+        count = int(days * factor) + 20
+        return max(count, days)
+
+    @staticmethod
+    def _clip_kdata_by_date(df, start_date, end_date) -> pd.DataFrame:
+        """R277: 按日期区间裁剪K线数据（start_date/end_date 为 None 时不裁剪）"""
+        if df is None or df.empty or start_date is None or end_date is None:
+            return df if df is not None else pd.DataFrame()
+        try:
+            ts = pd.to_datetime(df['datetime']) if 'datetime' in df.columns else pd.to_datetime(df.index)
+            start_ts = pd.Timestamp(start_date)
+            end_ts = pd.Timestamp(end_date)
+            mask = (ts >= start_ts) & (ts <= end_ts)
+            clipped = df[mask].copy()
+            logger.info(f"按日期区间裁剪K线: 原 {len(df)} 条 -> {len(clipped)} 条 "
+                        f"({start_ts.date()} ~ {end_ts.date()})")
+            return clipped
+        except Exception as e:
+            logger.warning(f"按日期区间裁剪K线失败: {e}，返回原数据")
+            return df if df is not None else pd.DataFrame()
 
     async def _get_financial_data(self, stock_code: str) -> Dict[str, Any]:
         """获取财务数据（增强版：集成DuckDB存储）
@@ -3443,6 +4012,7 @@ class UnifiedDataManager:
                                 AND hkd.frequency = dqm.frequency
                             )
                             WHERE hkd.frequency = ?
+                              AND (hkd.frequency <> '1d' OR CAST(hkd.timestamp AS TIME) = TIME '00:00:00')
                             QUALIFY ROW_NUMBER() OVER (
                                 PARTITION BY hkd.symbol, hkd.timestamp, hkd.frequency 
                                 ORDER BY 
@@ -3602,8 +4172,10 @@ class UnifiedDataManager:
                         df = result_df
                         logger.info(f"批量查询成功: 共 {len(df)} 条记录, {df['code'].nunique()} 只股票")
 
-                        # 为视图结果添加data_source列
-                        df['data_source'] = 'best_quality'
+                        # R285 修复：不再强制覆盖 data_source 为 'best_quality' 伪源
+                        # （视图 SELECT hkd.* 已透传真实数据源，覆盖会污染溯源/落库主键）
+                        if 'data_source' not in df.columns:
+                            df['data_source'] = 'best_quality'
 
                         # ========== 数据标准化阶段性能监控 ==========
                         standardization_start = time.time()
@@ -3615,10 +4187,11 @@ class UnifiedDataManager:
                             latest_ts = df['datetime'].iloc[0]
                             latest_score = df['quality_score'].iloc[0]
                             check_date = pd.Timestamp(latest_ts).date() if pd.notna(latest_ts) else datetime.now().date()
+                            real_source = str(df['data_source'].iloc[0]) if 'data_source' in df.columns else 'best_quality'
                             self._set_quality_score_to_cache(
                                 symbol=latest_code,
                                 frequency=frequency,
-                                data_source='best_quality',
+                                data_source=real_source,
                                 check_date=check_date.isoformat(),
                                 score=float(latest_score) if pd.notna(latest_score) else 0.0
                             )
@@ -3768,6 +4341,7 @@ class UnifiedDataManager:
                 FROM historical_kline_data
                 WHERE symbol = ? 
                   AND frequency = ?
+                  AND (frequency <> '1d' OR CAST(timestamp AS TIME) = TIME '00:00:00')
             """
 
             query_params = [symbol, frequency]
@@ -3829,6 +4403,7 @@ class UnifiedDataManager:
                     FROM historical_kline_data
                     WHERE symbol IN ({','.join([f"'{s}'" for s in symbols])})
                       AND frequency = ?
+                      AND (frequency <> '1d' OR CAST(timestamp AS TIME) = TIME '00:00:00')
             """
 
             query_params = [frequency]
@@ -4657,6 +5232,52 @@ class UnifiedDataManager:
         except Exception as e:
             logger.error(f" 获取资产路由优先级失败: {e}")
             return []
+
+    def get_data_source_priorities(self) -> Dict[str, List[str]]:
+        """
+        获取数据源优先级配置（PluginManager.switch_data_source 数据源切换使用）
+
+        R275 修复：该方法此前不存在，导致 plugin_manager.py L1220-1231 的
+        switch_data_source hasattr 判断为 False → 切换静默跳过、TET 路由优先级永不变。
+        返回值以 TET 路由器实际生效的 asset_priorities 为准，保证短名/完整 plugin_id 一致。
+        """
+        try:
+            router = self.data_source_router
+            if router is not None and getattr(router, 'asset_priorities', None):
+                merged = dict(self._data_source_priorities)
+                for at, priorities in router.asset_priorities.items():
+                    merged[at.value if hasattr(at, 'value') else str(at)] = list(priorities)
+                return merged
+        except Exception as e:
+            logger.error(f"获取数据源优先级失败: {e}")
+        return dict(self._data_source_priorities)
+
+    def set_data_source_priority(self, asset_type: Union[str, AssetType], priorities: List[str]) -> bool:
+        """
+        设置数据源优先级，并同步到 TET 路由器（使切换真实影响 failover 路由顺序）
+
+        R275 修复：PluginManager.switch_data_source 调用的该方法此前缺失，
+        现已补齐并将优先级写入 DataSourceRouter.asset_priorities（_get_available_sources
+        优先使用配置的优先级列表），数据源切换不再是"假实现"。
+        """
+        try:
+            asset_key = asset_type.value if hasattr(asset_type, 'value') else str(asset_type)
+            self._data_source_priorities[asset_key] = list(priorities)
+
+            try:
+                from ..plugin_types import AssetType as _AssetType
+                asset_enum = asset_type if isinstance(asset_type, _AssetType) else _AssetType(asset_key)
+                router = self.data_source_router
+                if router is not None:
+                    router.set_asset_priorities(asset_enum, list(priorities))
+            except Exception as e:
+                logger.warning(f"同步数据源优先级到TET路由器失败: {e}")
+
+            logger.info(f"数据源优先级已更新: {asset_key} -> {list(priorities)}")
+            return True
+        except Exception as e:
+            logger.error(f"设置数据源优先级失败: {e}")
+            return False
 
     def _initialize_sector_service(self):
         """

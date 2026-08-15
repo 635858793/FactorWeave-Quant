@@ -91,7 +91,11 @@ class HuobiPlugin(HTTPAPIPluginTemplate):
                 '1hour': '60min', '4hour': '4hour',
                 'daily': '1day', 'D': '1day',
                 'weekly': '1week', 'W': '1week',
-                'monthly': '1mon', 'M': '1mon'
+                'monthly': '1mon', 'M': '1mon',
+                # R275 补齐系统标准周期键（UDM/Period 传值），防静默回退日线
+                '1': '1min', '5': '5min', '15': '15min', '30': '30min', '60': '60min',
+                '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '60m': '60min',
+                '1H': '60min', '1h': '60min'
             },
 
             # 限流配置（火币：100次/10秒）

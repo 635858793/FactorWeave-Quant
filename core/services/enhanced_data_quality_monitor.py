@@ -33,7 +33,11 @@ def _import_pandas_numpy():
 
 # 导入数据质量风险管理器和告警规则引擎
 from ..data_quality_risk_manager import DataQualityRiskManager
-from .alert_rule_engine import AlertRuleEngine
+from .alert_rule_engine import (
+    AlertRuleEngine, AlertRule, RuleCondition,
+    RuleConditionType, RuleAction, RuleActionType,
+)
+from .alert_deduplication_service import AlertLevel
 
 logger = logger.bind(module=__name__)
 
@@ -149,6 +153,9 @@ class EnhancedDataQualityMonitor:
         self._monitoring_active = False
         self._monitor_thread = None
         self._lock = threading.RLock()
+
+        # R286 修复2：预注册数据质量告警规则（此前 alert_engine 仅存不用，告警链路断）
+        self._register_quality_alerts()
 
         logger.info("增强数据质量监控器初始化完成")
 
@@ -280,6 +287,20 @@ class EnhancedDataQualityMonitor:
                 key = f"{data_source}_{data_type}_{symbol or 'all'}"
                 self._quality_metrics[key] = metrics
                 self._quality_history.append(metrics)
+
+            # R286 修复1：把本次质量评估写入 DataQualityRiskManager 风险历史，
+            # 使 get_source_risk_profile 具备按数据源聚合的真实质量画像，
+            # 供 TET failover 质量加权排序使用（此前 risk_history 仅插件模板写入，
+            # 生产 K 线链路完全没数据 → get_source_risk_profile 0 生产调用）。
+            # backfill=True：与落库评估一致，K 线最新交易日早于当天属正常场景，
+            # 避免 timeliness 把历史回填当质量缺陷惩罚。
+            try:
+                self.risk_manager.assess_risk(
+                    data, data_source, data_type,
+                    {'backfill': True, 'source': data_source}
+                )
+            except Exception as risk_error:
+                logger.debug(f"写入数据源质量画像失败: {data_source} - {risk_error}")
 
             # 检查是否需要告警
             if overall_score < 0.8:  # 质量分数低于80%
@@ -583,11 +604,96 @@ class EnhancedDataQualityMonitor:
         except Exception as e:
             logger.error(f"检测异常失败: {e}")
 
-    def _process_alerts(self):
-        """处理告警"""
+    def _register_quality_alerts(self):
+        """R286 修复2：预注册数据质量告警规则到 AlertRuleEngine（幂等）
+
+        此前 AlertRuleEngine 在 service_bootstrap 注册时已注入 EnhancedDataQualityMonitor，
+        但从未被使用——_trigger_quality_alert 只写日志，告警规则引擎形同虚设。
+        此处注册一条综合质量分过低规则，由 alert_engine 冷却/限频/去重机制接管。
+        """
         try:
-            # 这里可以添加告警处理逻辑
-            pass
+            if self.alert_engine is None:
+                return
+            if self.alert_engine.get_rule('data_quality_low_score') is not None:
+                return
+            rule = AlertRule(
+                rule_id='data_quality_low_score',
+                name='数据质量综合评分过低',
+                description='数据源返回的数据综合质量评分低于 80%',
+                conditions=[
+                    RuleCondition(
+                        condition_type=RuleConditionType.THRESHOLD,
+                        metric_name='quality_overall_score',
+                        operator='<',
+                        threshold_value=0.8,
+                        time_window_minutes=5,
+                    )
+                ],
+                actions=[
+                    RuleAction(
+                        action_type=RuleActionType.LOG,
+                        target='data_quality_log',
+                        template='数据质量告警[{rule_name}]: 源={quality_source} 类型={quality_type} '
+                                 '标的={quality_symbol} 综合评分={quality_overall_score:.1%}',
+                    ),
+                ],
+                level=AlertLevel.WARNING,
+                category='data_quality',
+                cooldown_minutes=5,
+                max_executions_per_hour=10,
+                tags=['data_quality', 'monitor'],
+            )
+            self.alert_engine.add_rule(rule)
+            logger.info("数据质量告警规则已注册: data_quality_low_score")
+        except Exception as e:
+            logger.debug(f"注册数据质量告警规则失败: {e}")
+
+    def _feed_alert_engine(self, metrics: QualityMetrics):
+        """R286 修复2：把质量指标灌入 AlertRuleEngine 并触发规则评估
+
+        evaluate_rules 为 async 接口，同步上下文通过独立事件循环桥接。
+        """
+        if self.alert_engine is None:
+            return
+        try:
+            self.alert_engine.update_metrics({
+                'quality_overall_score': metrics.overall_score,
+                'quality_completeness': metrics.completeness_score,
+                'quality_accuracy': metrics.accuracy_score,
+                'quality_timeliness': metrics.timeliness_score,
+                'quality_consistency': metrics.consistency_score,
+                'quality_validity': metrics.validity_score,
+                'quality_uniqueness': metrics.uniqueness_score,
+                'quality_missing_records': metrics.missing_records,
+                'quality_duplicate_records': metrics.duplicate_records,
+                'quality_source': metrics.data_source,
+                'quality_type': metrics.data_type,
+                'quality_symbol': metrics.symbol or 'all',
+            })
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self.alert_engine.evaluate_rules())
+            finally:
+                loop.close()
+        except Exception as engine_error:
+            logger.debug(f"告警规则引擎评估失败: {engine_error}")
+
+    def _process_alerts(self):
+        """处理告警——将最近一次质量监控结果灌入告警规则引擎评估
+
+        R286 修复2：此前为 pass 空实现，监控循环每分钟空转。现在由
+        AlertRuleEngine 的冷却/限频机制（cooldown_minutes/max_executions_per_hour）
+        自动节流，避免重复告警。
+        """
+        try:
+            if self.alert_engine is None:
+                return
+            with self._lock:
+                if not self._quality_metrics:
+                    return
+                latest = list(self._quality_metrics.values())[-1]
+            self._feed_alert_engine(latest)
         except Exception as e:
             logger.error(f"处理告警失败: {e}")
 
@@ -604,7 +710,11 @@ class EnhancedDataQualityMonitor:
             logger.error(f"清理过期数据失败: {e}")
 
     def _trigger_quality_alert(self, metrics: QualityMetrics):
-        """触发质量告警"""
+        """触发质量告警
+
+        R286 修复2：保留日志的同时接通 AlertRuleEngine（_feed_alert_engine），
+        结束此前"仅 logger.warning、AlertRuleEngine 存而不用"的断链状态。
+        """
         try:
             alert_message = f"数据质量告警: {metrics.data_source} - {metrics.data_type}"
             if metrics.symbol:
@@ -613,6 +723,9 @@ class EnhancedDataQualityMonitor:
 
             # 发送告警（这里可以集成实际的告警系统）
             logger.warning(alert_message)
+
+            # R286 修复2：同步灌入告警规则引擎（内部容错，失败不影响主链路）
+            self._feed_alert_engine(metrics)
 
         except Exception as e:
             logger.error(f"触发质量告警失败: {e}")

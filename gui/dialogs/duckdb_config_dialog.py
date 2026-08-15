@@ -1093,12 +1093,18 @@ class DuckDBConfigDialog(BaseDialog):
                 success = self.config_manager.activate_profile(self.current_profile.id, "ui_user")
 
                 if success:
-                    # 这里可以添加实际应用配置的逻辑
-                    # 例如重新初始化DuckDB连接等
+                    # R289 修复：原实现只写 SQLite is_active 标记（"假生效"）——
+                    # 高级配置对话框编辑保存的配置从未推送到任何连接体系。
+                    # 现在将 profile 映射为 manager 版 DuckDBConfig 并注入全局
+                    # DuckDBConnectionManager 单例（settings_dialog._apply_duckdb_config_to_manager
+                    # 同款路径）：更新 _default_config 并重建业务连接池，经
+                    # DuckDBConnectionPool._apply_config 对每个池连接真正 SET。
+                    applied = self._apply_profile_to_manager(self.current_profile)
 
                     QMessageBox.information(
                         self, "成功",
                         f"配置 '{self.current_profile.profile_name}' 已应用并激活"
+                        + ("，已注入业务 DuckDB 连接池" if applied else "（业务连接池注入失败，请查看日志）")
                     )
 
                     self.load_profiles()
@@ -1113,6 +1119,36 @@ class DuckDBConfigDialog(BaseDialog):
             except Exception as e:
                 logger.error(f"应用配置失败: {e}")
                 QMessageBox.warning(self, "错误", f"应用配置失败: {e}")
+
+    def _apply_profile_to_manager(self, profile: 'DuckDBConfigProfile') -> bool:
+        """R289：将高级配置 profile 注入全局 DuckDBConnectionManager（真正生效）
+
+        把 DuckDBConfigProfile（33 字段、int threads）映射为 manager 版
+        DuckDBConfig（交集字段、str threads），调用 apply_default_config。
+        仅映射 manager 支持的字段，其余 profile 专属字段（io_threads/
+        buffer_pool_size/compression_level/http_* 等）业务连接不消费，忽略。
+        """
+        try:
+            from core.database.duckdb_manager import get_connection_manager, DuckDBConfig
+            cfg = DuckDBConfig(
+                memory_limit=getattr(profile, 'memory_limit', None) or '4.0GB',
+                threads=str(getattr(profile, 'threads', 4)),
+                max_memory=getattr(profile, 'max_memory', None) or '4.4GB',
+                checkpoint_threshold=getattr(profile, 'checkpoint_threshold', None) or '512MB',
+                enable_progress_bar=getattr(profile, 'enable_progress_bar', True),
+                enable_profiling=getattr(profile, 'enable_profiling', False),
+                preserve_insertion_order=getattr(profile, 'preserve_insertion_order', False),
+                enable_external_access=getattr(profile, 'enable_external_access', True),
+            )
+            ok = get_connection_manager().apply_default_config(cfg)
+            if ok:
+                logger.info(
+                    f"DuckDB 高级配置已注入业务连接池: memory_limit={cfg.memory_limit} "
+                    f"threads={cfg.threads} max_memory={cfg.max_memory}")
+            return ok
+        except Exception as e:
+            logger.error(f"DuckDB 高级配置注入失败: {e}")
+            return False
 
     def load_test_results(self):
         """加载测试结果"""

@@ -48,7 +48,8 @@
     "source": "tdx",
     "cache_enabled": true,
     "cache_size": 1000,
-    "update_interval": 60
+    "update_interval": 60,
+    "reject_low_quality_kline": false
   },
   "chart": {
     "default_period": "D",

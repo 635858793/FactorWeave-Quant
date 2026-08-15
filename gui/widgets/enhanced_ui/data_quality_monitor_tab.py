@@ -148,11 +148,17 @@ class QualityTrendChart:
         self.fig.tight_layout()
 
     def update_quality_trends(self, quality_data: Dict[str, Any]):
-        """更新质量趋势数据（优化：使用增量更新）"""
+        """更新质量趋势数据（优化：增量更新 + R267 blit 局部重绘）"""
         try:
             # 延迟导入pandas和numpy
             _import_pandas_numpy()
-            
+
+            # R267 blit：惰性初始化局部重绘引擎（首个5s周期后才接入，避免启动开销）
+            if not hasattr(self, '_blit'):
+                from core.utils.mpl_blit import BlitEngine
+                self._blit = BlitEngine(self.canvas, bbox_getter=lambda: self.fig.bbox,
+                                        log_tag='[DQChart]')
+
             # 获取真实质量趋势数据（24小时）
             timestamps = pd.date_range(end=datetime.now(), periods=24, freq='H')
 
@@ -164,6 +170,8 @@ class QualityTrendChart:
 
             quality_scores = np.full(24, current_score)
             quality_scores = np.clip(quality_scores, 0, 1)
+
+            first_frame = self.quality_trend_line is None
 
             # 增量更新质量评分趋势图
             if self.quality_trend_line is None:
@@ -214,27 +222,55 @@ class QualityTrendChart:
                     rect.set_height(h)
                     rect.set_color(c)
 
-            # 使用默认质量分布（避免调用可能获取锁的方法）
-            quality_distribution = {'优秀': 50, '良好': 30, '一般': 15, '较差': 5}
-            quality_levels = list(quality_distribution.keys())
-            quality_counts = list(quality_distribution.values())
-            colors_pie = ['#27AE60', '#3498DB', '#F39C12', '#E74C3C']
+            # 饼图（数据恒定：R267 仅首帧创建，后续跳过重建避免每帧 clear 全量开销）
+            if self.quality_pie is None:
+                quality_distribution = {'优秀': 50, '良好': 30, '一般': 15, '较差': 5}
+                quality_levels = list(quality_distribution.keys())
+                quality_counts = list(quality_distribution.values())
+                colors_pie = ['#27AE60', '#3498DB', '#F39C12', '#E74C3C']
+                self.ax4.clear()
+                self.ax4.set_title('质量分布', fontsize=8, fontweight='bold')
+                wedges, texts, autotexts = self.ax4.pie(quality_counts, labels=quality_levels,
+                                                        colors=colors_pie, autopct='%1.1f%%',
+                                                        startangle=90)
+                for autotext in autotexts:
+                    autotext.set_color('white')
+                    autotext.set_fontweight('bold')
+                    autotext.set_fontsize(8)
+                self.quality_pie = (wedges, texts, autotexts)
 
-            # 饼图需要完全重绘（matplotlib不支持饼图增量更新）
-            self.ax4.clear()
-            self.ax4.set_title('质量分布', fontsize=8, fontweight='bold')
-            wedges, texts, autotexts = self.ax4.pie(quality_counts, labels=quality_levels,
-                                                    colors=colors_pie, autopct='%1.1f%%',
-                                                    startangle=90)
+            # 首帧：tight_layout 布局后强制重建 blit 背景
+            if first_frame:
+                self.fig.tight_layout()
+                self._blit.invalidate()
+            else:
+                # 数据范围变化时重建背景（刻度需重算），否则直接 blit
+                old = (self.ax1.get_xlim(), self.ax1.get_ylim(),
+                       self.ax2.get_xlim(), self.ax2.get_ylim(),
+                       self.ax3.get_xlim(), self.ax3.get_ylim())
+                self.ax1.relim()
+                self.ax1.autoscale_view()
+                self.ax2.relim()
+                self.ax2.autoscale_view()
+                self.ax3.relim()
+                self.ax3.autoscale_view()
+                new = (self.ax1.get_xlim(), self.ax1.get_ylim(),
+                       self.ax2.get_xlim(), self.ax2.get_ylim(),
+                       self.ax3.get_xlim(), self.ax3.get_ylim())
+                if old != new:
+                    self._blit.invalidate()
 
-            # 设置饼图文字样式
-            for autotext in autotexts:
-                autotext.set_color('white')
-                autotext.set_fontweight('bold')
-                autotext.set_fontsize(8)
-
-            self.fig.tight_layout()
-            self.canvas.draw()
+            # blit 局部重绘（失败自动回退 draw_idle）
+            dynamic = [self.quality_trend_line,
+                       self.quality_trend_warning_line,
+                       self.quality_trend_danger_line]
+            if self.anomaly_bar is not None:
+                dynamic.extend(self.anomaly_bar)
+            if self.source_bars is not None:
+                dynamic.extend(self.source_bars)
+            if self.quality_pie is not None:
+                dynamic.extend(self.quality_pie[0])
+            self._blit.render(dynamic)
 
         except Exception as e:
             _get_logger().exception(f"更新质量趋势图表失败: {e}")

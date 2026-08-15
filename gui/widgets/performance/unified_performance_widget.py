@@ -841,30 +841,25 @@ class ModernUnifiedPerformanceWidget(QWidget):
             cache_key = 'risk_metrics'
             if self._should_update_cache(cache_key, 3):  # 3秒缓存
                 try:
-                    from core.risk_control import RiskMonitor
-                    from core.performance.professional_risk_metrics import ProfessionalRiskMetrics
+                    from core.risk_manager import RiskManager
 
                     risk_metrics = {}
 
-                    try:
-                        risk_manager = None
-                        if risk_manager.initialized:
-                            current_positions = getattr(risk_manager, 'current_positions', {})
-                            current_equity = getattr(risk_manager, 'current_equity', 0)
-                            peak_equity = getattr(risk_manager, 'peak_equity', 0)
+                    # R268-F2: 原 `risk_manager = None` 使 `if risk_manager.initialized:`
+                    # 必然 AttributeError → 异常被吞 → 风控面板恒全 0 占位。
+                    # 改用真实 RiskManager 实例 (构造轻量, initialize 加载风险参数)。
+                    risk_manager = RiskManager()
+                    if risk_manager.initialize():
+                        current_positions = getattr(risk_manager, 'current_positions', {})
+                        current_equity = getattr(risk_manager, 'current_equity', 0)
+                        peak_equity = getattr(risk_manager, 'peak_equity', 0)
 
-                            if current_equity > 0 and peak_equity > 0:
-                                drawdown = (peak_equity - current_equity) / peak_equity * 100
-                                risk_metrics['最大回撤'] = drawdown
-                                risk_metrics['仓位风险'] = sum(current_positions.values()) * 100 if current_positions else 0
+                        if current_equity > 0 and peak_equity > 0:
+                            drawdown = (peak_equity - current_equity) / peak_equity * 100
+                            risk_metrics['最大回撤'] = drawdown
+                            risk_metrics['仓位风险'] = sum(current_positions.values()) * 100 if current_positions else 0
 
-                    except Exception as e:
-                        logger.debug(f"风险管理器数据获取失败: {e}")
-
-                    try:
-                        prof_risk = ProfessionalRiskMetrics()
-                    except Exception as e:
-                        logger.debug(f"专业风险指标获取失败: {e}")
+                    # R268-F2: 移除 `prof_risk = ProfessionalRiskMetrics()` 实例化后从未使用的死代码
 
                     if not risk_metrics:
                         risk_metrics = {
@@ -1323,8 +1318,6 @@ class ModernUnifiedPerformanceWidget(QWidget):
                 self.drag_detect_timer.stop()
             if hasattr(self, '_style_check_timer') and self._style_check_timer.isActive():
                 self._style_check_timer.stop()
-            if hasattr(self, '_optimization_monitor_timer') and self._optimization_monitor_timer.isActive():
-                self._optimization_monitor_timer.stop()
             if hasattr(self, '_cleanup_timer') and self._cleanup_timer.isActive():
                 self._cleanup_timer.stop()
                 logger.debug("定期清理定时器已停止")

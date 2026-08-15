@@ -22,6 +22,7 @@ from PyQt5.QtGui import QFont, QIcon
 from .base_panel import BasePanel
 from core.events import StockSelectedEvent, ChartUpdateEvent, IndicatorChangedEvent, UIDataReadyEvent, MultiScreenToggleEvent, ThemeChangedEvent
 from core.services.unified_chart_service import get_unified_chart_service, create_chart_widget, ChartDataLoader, ChartWidget
+from core.indicators.indicators_algorithm import BUILTIN_INDICATORS
 from optimization.progressive_loading_manager import get_progressive_loader, LoadingStage
 from optimization.update_throttler import get_update_throttler
 
@@ -374,8 +375,14 @@ class ChartCanvas(QWidget):
                     'kdata': self.current_kdata,
                     'stock_code': self.current_stock,
                     'indicators_data': stock_data.get('indicators_data', stock_data.get('indicators', {})),
-                    'title': stock_data.get('stock_name', self.current_stock)
+                    'title': stock_data.get('stock_name', self.current_stock),
+                    # R277 修复：透传图表类型（K线图/分时图/美国线/收盘价），
+                    # 原实现在此重建字典时丢弃 chart_type，导致渲染层恒为K线图
+                    'chart_type': getattr(self, '_current_chart_type', 'K线图')
                 }
+                # R279：若上层数据携带形态信号则透传（供 rendering_mixin 重绘形态标识）
+                if 'pattern_signals' in stock_data:
+                    chart_data['pattern_signals'] = stock_data['pattern_signals']
 
                 # 修复：关键K线图渲染立即执行（不使用渐进式加载）
                 logger.info("关键K线图渲染立即执行（不使用渐进式加载）")
@@ -630,13 +637,40 @@ class ChartCanvas(QWidget):
 class MiddlePanel(BasePanel):
     """
     中间面板
-
     功能：
     1. K线图显示
     2. 技术指标图表
     3. 图表控制工具
     4. 多周期切换
     """
+
+    # R267: 内置指标集合（indicator_mixin 有专门渲染分支，其余走 talib 通用分支）
+    # R282: 判组唯一来源统一引用 indicators_algorithm.BUILTIN_INDICATORS（与 left_panel 口径一致）
+    _BUILTIN_INDICATORS = set(BUILTIN_INDICATORS)
+
+    # R267: talib 指标默认参数（TA-Lib 参数名契约：timeperiod/fastperiod 等）
+    _TALIB_DEFAULT_PARAMS = {
+        'ADOSC': {'fastperiod': 3, 'slowperiod': 10},
+        'AROON': {'timeperiod': 25},
+        'AROONOSC': {'timeperiod': 25},
+        'ATR': {'timeperiod': 14},
+        'BBANDS': {'timeperiod': 5, 'nbdevup': 2, 'nbdevdn': 2},
+        'CCI': {'timeperiod': 14},
+        'CMO': {'timeperiod': 14},
+        'DX': {'timeperiod': 14},
+        'KAMA': {'timeperiod': 10},
+        'MFI': {'timeperiod': 14},
+        'NATR': {'timeperiod': 14},
+        'STOCH': {'fastk_period': 5, 'slowk_period': 3, 'slowd_period': 3},
+        'STOCHF': {'fastk_period': 5, 'fastd_period': 3},
+        'STOCHRSI': {'timeperiod': 14, 'fastk_period': 5, 'fastd_period': 3},
+        'TRANGE': {'timeperiod': 14},
+        'WILLR': {'timeperiod': 14},
+    }
+
+    # R282: 内置指标列表（判组唯一来源 BUILTIN_INDICATORS，消除原 7 项硬编码；
+    # CCI/OBV 不再列入内置，由 TA-Lib 动态列表提供 → 统一走 talib 组直算）
+    _BUILTIN_LIST = sorted(BUILTIN_INDICATORS)
 
     # 定义信号
     chart_updated = pyqtSignal(str, str)  # 股票代码, 周期
@@ -671,6 +705,13 @@ class MiddlePanel(BasePanel):
         self._current_time_range = '最近1年'  # 时间范围
         self._current_chart_type = 'K线图'  # 图表类型
         self._current_indicators = ['MA', 'MACD']
+
+        # R282: 指标区域归属持久化（{指标名: 'indicator1'|'indicator2'}）
+        # 用户通过"指标1/指标2"下拉框切换的区域归属，在 left_panel 指标事件重发时保留
+        self._indicator_region_map: Dict[str, str] = {}
+        # R282: 用户自定义参数持久化（{指标名: {参数名: 值}}）
+        # 对话框改参后回存，后续 left_panel 重选指标（事件不带 indicator_params）时不丢失
+        self._indicator_user_params: Dict[str, Dict[str, Any]] = {}
 
         # 回测区间
         from PyQt5.QtCore import QDate
@@ -755,6 +796,18 @@ class MiddlePanel(BasePanel):
 
         toolbar.addSeparator()
 
+        # R283: 指标区动态切换下拉框（R267 双指标区收敛为单指标区，移除 indicator2_combo）
+        toolbar.addWidget(QLabel("指标:"))
+        indicator1_combo = QComboBox()
+        indicator1_combo.setMinimumWidth(90)
+        indicator1_combo.addItem('无')
+        indicator1_combo.addItems(self._get_all_indicator_names())
+        indicator1_combo.setCurrentText('MACD')
+        toolbar.addWidget(indicator1_combo)
+        self.add_widget('indicator1_combo', indicator1_combo)
+
+        toolbar.addSeparator()
+
         # 多屏切换按钮
         multi_screen_action = QAction("多屏", self._root_frame)
         multi_screen_action.setStatusTip("切换到多屏模式")
@@ -822,9 +875,39 @@ class MiddlePanel(BasePanel):
             chart_type_combo = self.get_widget('chart_type_combo')
             chart_type_combo.currentTextChanged.connect(self._on_chart_type_changed)
 
+            # R277 修复：回测区间控件绑定日期变更（原为无消费者/无信号绑定的"死控件"，
+            # 用户修改的日期不会流向任何地方；现保存为状态供回测入口通过 get_backtest_range 消费）
+            start_date_edit = self.get_widget('start_date_edit')
+            end_date_edit = self.get_widget('end_date_edit')
+            if start_date_edit:
+                start_date_edit.dateChanged.connect(self._on_backtest_date_changed)
+            if end_date_edit:
+                end_date_edit.dateChanged.connect(self._on_backtest_date_changed)
+
             # 工具栏按钮
             multi_screen_action = self.get_widget('multi_screen_action')
             multi_screen_action.triggered.connect(self._toggle_multi_screen)
+
+            # R283: 指标区下拉框 → 动态切换指标（R267 双指标区收敛为单指标区）
+            indicator1_combo = self.get_widget('indicator1_combo')
+            if indicator1_combo:
+                indicator1_combo.currentTextChanged.connect(self._on_region_indicator_changed)
+            # R283: 初始化同步——默认值（MACD）在 _create_widgets 的 setCurrentText 中
+            # 已设置，早于此处绑定，currentTextChanged 不会触发 → 指标窗从未渲染
+            # （旧版"空指标窗"根因）。绑定后主动触发一次保证 3 轴布局与下拉框一致。
+            if indicator1_combo:
+                self._on_region_indicator_changed(indicator1_combo.currentText())
+
+            # R283: 指标区"指标 ▼"菜单按钮联动——注入指标名称列表 + 桥接选择信号
+            chart_canvas = self.get_widget('chart_canvas')
+            chart_widget = getattr(chart_canvas, 'chart_widget', None) if chart_canvas else None
+            if chart_widget is not None:
+                if hasattr(chart_widget, 'set_region_indicator_names'):
+                    chart_widget.set_region_indicator_names(
+                        ['无'] + self._get_all_indicator_names())
+                if hasattr(chart_widget, 'region_indicator_selected'):
+                    chart_widget.region_indicator_selected.connect(
+                        self._on_chart_region_indicator_selected)
 
             # 导入安全连接工具
             from utils.qt_helpers import safe_connect
@@ -1294,6 +1377,39 @@ class MiddlePanel(BasePanel):
         except Exception as e:
             logger.error(f"处理时间范围变更失败: {e}", exc_info=True)
 
+    def _on_backtest_date_changed(self, date) -> None:
+        """R277: 回测区间日期变更处理，保存状态供回测入口消费
+
+        原实现中 start_date_edit/end_date_edit 无任何信号绑定与读取方，
+        用户手动修改的回测区间不流向任何业务逻辑（死控件）。
+        """
+        try:
+            start_date_edit = self.get_widget('start_date_edit')
+            end_date_edit = self.get_widget('end_date_edit')
+            if start_date_edit:
+                self._start_date = start_date_edit.date()
+            if end_date_edit:
+                self._end_date = end_date_edit.date()
+            logger.debug(f"回测区间更新: {self._start_date.toString('yyyy-MM-dd')} "
+                         f"至 {self._end_date.toString('yyyy-MM-dd')}")
+        except Exception as e:
+            logger.error(f"更新回测区间状态失败: {e}", exc_info=True)
+
+    def get_backtest_range(self) -> tuple:
+        """R277: 获取当前回测区间，供回测入口（main_window_coordinator）消费
+
+        Returns:
+            tuple: (start_str, end_str)，格式 yyyy-MM-dd；未初始化时返回 (None, None)
+        """
+        try:
+            if hasattr(self, '_start_date') and hasattr(self, '_end_date'):
+                return (self._start_date.toString('yyyy-MM-dd'),
+                        self._end_date.toString('yyyy-MM-dd'))
+            return (None, None)
+        except Exception as e:
+            logger.warning(f"获取回测区间失败: {e}")
+            return (None, None)
+
     def _parse_time_range_to_dates(self, time_range: str) -> tuple:
         """将时间范围文本解析为开始和结束日期
 
@@ -1432,6 +1548,164 @@ class MiddlePanel(BasePanel):
         except Exception as e:
             logger.error(f"处理图表类型变更失败: {e}", exc_info=True)
 
+    def _get_all_indicator_names(self) -> list:
+        """获取全量指标列表（内置 + TA-Lib 动态枚举 + DB 指标表全量，按 name 去重内置优先）
+
+        R282: 数据源由「内置 + TA-Lib」扩展为「内置 + TA-Lib + DB indicator 表」，
+        保证 DB 中新增/自定义指标自动出现在下拉框（去重同名）。
+
+        Returns:
+            List[str]: 指标名称列表（不含 '无'）
+        """
+        try:
+            from core.indicators.indicators_algorithm import get_talib_real_indicator_list
+            talib_list = get_talib_real_indicator_list()
+        except Exception as e:
+            logger.warning(f"TA-Lib 指标列表获取失败，使用兜底列表: {e}")
+            talib_list = ['SMA', 'EMA', 'MACD', 'RSI', 'STOCH', 'BBANDS',
+                          'CCI', 'ADX', 'WILLR', 'MOM', 'ROC']
+        db_names = []
+        try:
+            from core.indicator_adapter import get_all_indicators_metadata
+            all_metadata = get_all_indicators_metadata()
+            if isinstance(all_metadata, list):
+                db_names = [m.get('name') for m in all_metadata if m.get('name')]
+            elif isinstance(all_metadata, dict):
+                db_names = list(all_metadata.keys())
+        except Exception as e:
+            logger.debug(f"DB 指标列表获取失败（不影响 TA-Lib 列表）: {e}")
+        seen = set()
+        names = []
+        for n in list(self._BUILTIN_LIST) + list(talib_list) + db_names:
+            if n and n not in seen:
+                seen.add(n)
+                names.append(n)
+        return names
+
+    @pyqtSlot(str)
+    def _on_region_indicator_changed(self, text: str) -> None:
+        """R283: 指标区下拉框切换 → 重组指标列表并更新图表（R267 双区域收敛为单指标区）
+
+        指标下拉框(indicator1_combo) → region='indicator1' → indicator_ax
+        选择"无"则清空指标区。
+        """
+        try:
+            indicator1_combo = self.get_widget('indicator1_combo')
+            if not indicator1_combo:
+                return
+
+            chart_canvas = self.get_widget('chart_canvas')
+            if not chart_canvas:
+                return
+            chart_widget = getattr(chart_canvas, 'chart_widget', None) or chart_canvas
+            if not chart_widget:
+                return
+
+            region = 'indicator1'
+            name = indicator1_combo.currentText()
+            indicator_list = []
+            if not name or name == '无':
+                # R282: 清空区域 → 移除该区域的历史归属，避免重选时误回填
+                self._indicator_region_map = {
+                    k: v for k, v in self._indicator_region_map.items() if v != region}
+            else:
+                # R282: 记录指标 → 区域归属（供 left_panel 指标事件重发时保留区域）
+                self._indicator_region_map[name] = region
+                group = 'builtin' if name in self._BUILTIN_INDICATORS else 'talib'
+                params = dict(self._TALIB_DEFAULT_PARAMS.get(name, {})) if group == 'talib' else {}
+                # R282: 合并用户在对话框设置的自定义参数（region 下拉框场景同样生效）
+                user_params = self._indicator_user_params.get(name, {}) or {}
+                if user_params:
+                    params = {**params, **user_params}
+                indicator_list.append({
+                    "name": name,
+                    "params": params,
+                    "group": group,
+                    "region": region,
+                })
+
+            if hasattr(chart_widget, 'on_indicator_selected'):
+                chart_widget.on_indicator_selected(indicator_list)
+                logger.info(
+                    f"指标区下拉框切换: {[(ind['name'], ind['region']) for ind in indicator_list]}")
+        except Exception as e:
+            logger.error(f"指标区切换失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    def _on_chart_region_indicator_selected(self, region: str, names) -> None:
+        """R283+: 指标区"指标 ▼"菜单选择 → 复用下拉框渲染链路（收敛为单指标区）
+
+        兼容字符串（旧调用）与列表（菜单多选）：
+        - 空列表 → 清空指标区
+        - 单选 → 走 indicator1_combo 既有链路（值变化时 currentTextChanged 自动
+          渲染；相同值时手动补触发，避免重复渲染）
+        - 多选 → 直接重组多指标列表调 on_indicator_selected，并同步下拉框显示
+          （blockSignals 避免 setCurrentText 触发二次渲染）
+        """
+        try:
+            if isinstance(names, str):
+                names = [names]
+            names = list(names or [])
+
+            if len(names) == 1:
+                # 单选 → 复用下拉框链路
+                combo = self.get_widget('indicator1_combo')
+                if not combo:
+                    return
+                old = combo.currentText()
+                combo.setCurrentText(names[0])
+                if old == names[0]:
+                    self._on_region_indicator_changed(names[0])
+                return
+
+            # 多选/清空 → 直接重组指标列表渲染
+            chart_canvas = self.get_widget('chart_canvas')
+            if not chart_canvas:
+                return
+            chart_widget = getattr(chart_canvas, 'chart_widget', None) or chart_canvas
+            if not chart_widget:
+                return
+
+            indicator_list = []
+            if names:
+                for name in names:
+                    # R282: 记录指标 → 区域归属（供 left_panel 指标事件重发时保留区域）
+                    self._indicator_region_map[name] = region
+                    group = 'builtin' if name in self._BUILTIN_INDICATORS else 'talib'
+                    params = dict(self._TALIB_DEFAULT_PARAMS.get(name, {})) if group == 'talib' else {}
+                    # R282: 合并用户在对话框设置的自定义参数（菜单场景同样生效）
+                    user_params = self._indicator_user_params.get(name, {}) or {}
+                    if user_params:
+                        params = {**params, **user_params}
+                    indicator_list.append({
+                        "name": name,
+                        "params": params,
+                        "group": group,
+                        "region": region,
+                    })
+            else:
+                self._indicator_region_map = {
+                    k: v for k, v in self._indicator_region_map.items() if v != region}
+
+            if hasattr(chart_widget, 'on_indicator_selected'):
+                chart_widget.on_indicator_selected(indicator_list)
+                logger.info(
+                    f"指标菜单多选: {[ind['name'] for ind in indicator_list]}")
+
+            # 同步下拉框显示（blockSignals 避免 setCurrentText 触发二次渲染）
+            combo = self.get_widget('indicator1_combo')
+            if combo is not None and hasattr(combo, 'blockSignals'):
+                old_block = combo.blockSignals(True)
+                try:
+                    combo.setCurrentText(names[0] if names else '无')
+                finally:
+                    combo.blockSignals(old_block)
+        except Exception as e:
+            logger.error(f"处理图表指标菜单选择失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
     @pyqtSlot(object)
     def on_indicator_changed(self, event: IndicatorChangedEvent) -> None:
         """响应指标变化事件"""
@@ -1459,30 +1733,11 @@ class MiddlePanel(BasePanel):
                 logger.warning("无法获取有效的chart_widget，跳过指标更新")
                 return
 
-            # 定义内置指标列表（这些指标在indicator_mixin中有专门处理）
-            builtin_indicators = {
-                'MA', 'MACD', 'RSI', 'BOLL', 'KDJ', 'CCI', 'OBV'
-            }
+            # 定义内置指标列表（这些指标在indicator_mixin中有专门处理）R267: 复用类常量
+            builtin_indicators = self._BUILTIN_INDICATORS
 
-            # 定义talib指标的默认参数
-            talib_default_params = {
-                'ADOSC': {'fastperiod': 3, 'slowperiod': 10},
-                'AROON': {'timeperiod': 25},
-                'AROONOSC': {'timeperiod': 25},
-                'ATR': {'timeperiod': 14},
-                'BBANDS': {'timeperiod': 5, 'nbdevup': 2, 'nbdevdn': 2},
-                'CCI': {'timeperiod': 14},
-                'CMO': {'timeperiod': 14},
-                'DX': {'timeperiod': 14},
-                'KAMA': {'timeperiod': 10},
-                'MFI': {'timeperiod': 14},
-                'NATR': {'timeperiod': 14},
-                'STOCH': {'fastk_period': 5, 'slowk_period': 3, 'slowd_period': 3},
-                'STOCHF': {'fastk_period': 5, 'fastd_period': 3},
-                'STOCHRSI': {'timeperiod': 14, 'fastk_period': 5, 'fastd_period': 3},
-                'TRANGE': {'timeperiod': 14},
-                'WILLR': {'timeperiod': 14},
-            }
+            # 定义talib指标的默认参数 R267: 复用类常量
+            talib_default_params = self._TALIB_DEFAULT_PARAMS
 
             # 将指标名称转换为完整格式，并根据名称智能判断group
             indicator_list = []
@@ -1496,10 +1751,25 @@ class MiddlePanel(BasePanel):
                     group = 'builtin' if ind_name in builtin_indicators else 'talib'
                     # 为talib指标提供默认参数
                     params = talib_default_params.get(ind_name, {}) if group == 'talib' else {}
+                    # R245: 合并用户参数（indicator_params 结构 {指标名: {参数名: 值}}，来自 IndicatorParamsDialog）
+                    event_params = getattr(event, 'indicator_params', {}) or {}
+                    user_params = event_params.get(ind_name, {}) if isinstance(event_params, dict) else {}
+                    if user_params:
+                        params = {**params, **user_params}
+                        # R282: 对话框改参回存 → 后续 left_panel 重选指标（事件不带参数）不丢失
+                        self._indicator_user_params[ind_name] = dict(user_params)
+                    else:
+                        # R282: 事件未带新参数 → 复用历史用户参数（改参持久化）
+                        saved_params = self._indicator_user_params.get(ind_name, {}) or {}
+                        if saved_params:
+                            params = {**params, **saved_params}
+                    # R282: 保留用户通过"指标1/指标2"下拉框设定的区域归属（默认 indicator1）
+                    region = self._indicator_region_map.get(ind_name, 'indicator1')
                     indicator_list.append({
                         "name": ind_name,
                         "params": params,
-                        "group": group
+                        "group": group,
+                        "region": region,
                     })
 
             logger.info(f"转换后的指标列表: {[ind['name'] for ind in indicator_list]}")

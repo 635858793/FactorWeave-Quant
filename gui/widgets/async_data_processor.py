@@ -261,8 +261,8 @@ class AsyncDataProcessor(QObject):
                 if cache_key in self._cache:
                     return self._cache[cache_key]
 
-            # 使用新的指标服务计算
-            result = calculate_indicator(indicator, data, params)
+            # 使用新的指标服务计算（模块级函数为 **params 签名，需关键字传参）
+            result = calculate_indicator(indicator, data, **params)
 
             # 缓存结果
             with self._cache_lock:

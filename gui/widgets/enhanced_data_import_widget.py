@@ -4730,18 +4730,11 @@ class EnhancedDataImportWidget(QWidget):
         try:
             # 频率字符串到枚举的映射
             frequency_str = task_config_dict.get('frequency', '1d')
-            frequency_map = {
-                '1d': DataFrequency.DAILY,
-                '1w': DataFrequency.WEEKLY,
-                '1m': DataFrequency.MONTHLY,
-                '5m': DataFrequency.MINUTE_5,
-                '15m': DataFrequency.MINUTE_15,
-                '30m': DataFrequency.MINUTE_30,
-                '60m': DataFrequency.HOUR_1,
-                '1min': DataFrequency.MINUTE_1,
-                'daily': DataFrequency.DAILY
-            }
-            frequency_enum = frequency_map.get(frequency_str, DataFrequency.DAILY)
+            # R292 修复：使用 import_config_manager 的完整映射（覆盖分钟/月线，
+            # 此前缺 '5min'/'15min'/'30min'/'60min'/'1M' 键 → 选分钟/月线创建任务
+            # 静默降级为日线；'1m' 误映射 MONTHLY 修正为 1 分钟）。
+            from core.importdata.import_config_manager import DUCKDB_FREQUENCY_TO_DATA_FREQUENCY
+            frequency_enum = DUCKDB_FREQUENCY_TO_DATA_FREQUENCY.get(frequency_str, DataFrequency.DAILY)
 
             # 转换为ImportTaskConfig对象
             task_config = ImportTaskConfig(

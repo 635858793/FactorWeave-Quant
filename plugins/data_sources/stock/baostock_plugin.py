@@ -51,6 +51,7 @@ class BaostockPlugin(IDataSourcePlugin):
         "15min": "15", "15m": "15", "15": "15",
         "30min": "30", "30m": "30", "30": "30",
         "60min": "60", "60m": "60", "60": "60",
+        "1H": "60", "1h": "60",
         "1min": None, "1m": None,  # Baostock 不提供1分钟线
     }
 

@@ -34,6 +34,9 @@ from core.events import EventBus, StockSelectedEvent, TradeExecutedEvent, Positi
 # 纯Loguru架构，移除旧的日志导入
 logger = logger
 
+# R272: 持仓敞口预警阈值 — 净敞口绝对值 / 总资产 超过该比例时 exposure_label 红色高亮 + tooltip
+_EXPOSURE_WARN_RATIO = 0.3
+
 
 def _select_asset_type_for_account(account_id) -> 'AssetType':
     """R254-P1: 根据账户上下文选择下单资产类型
@@ -268,6 +271,12 @@ class TradingPanel(QWidget):
         self.buy_quantity_spin.setSingleStep(100)
         buy_layout.addWidget(self.buy_quantity_spin)
 
+        # R271: 资金管理生产消费点 — PositionRiskMonitor.calculate_position_size 建议下单量
+        self.suggest_quantity_btn = QPushButton("建议数量")
+        self.suggest_quantity_btn.setToolTip("基于资金管理 (每笔风险金额/止损距离) 计算建议买入量")
+        self.suggest_quantity_btn.clicked.connect(self._on_suggest_quantity_clicked)
+        buy_layout.addWidget(self.suggest_quantity_btn)
+
         self.buy_button = QPushButton("买入")
         self.buy_button.setStyleSheet("""
             QPushButton {
@@ -298,6 +307,12 @@ class TradingPanel(QWidget):
         self.sell_quantity_spin.setValue(100)
         self.sell_quantity_spin.setSingleStep(100)
         sell_layout.addWidget(self.sell_quantity_spin)
+
+        # R272: 资金管理消费延伸 — 卖出侧建议平仓量 (对称买入侧 R271 suggest_quantity_btn)
+        self.suggest_sell_quantity_btn = QPushButton("建议平仓")
+        self.suggest_sell_quantity_btn.setToolTip("基于资金管理风控目标持仓量, 建议减仓或全部平仓")
+        self.suggest_sell_quantity_btn.clicked.connect(self._on_suggest_sell_quantity_clicked)
+        sell_layout.addWidget(self.suggest_sell_quantity_btn)
 
         self.sell_button = QPushButton("卖出")
         self.sell_button.setStyleSheet("""
@@ -331,6 +346,10 @@ class TradingPanel(QWidget):
 
         self.total_assets_label = QLabel("--")
         cash_layout.addRow("总资产:", self.total_assets_label)
+
+        # R271: 资金管理生产消费点 — PositionRiskMonitor.calculate_exposure 多空敞口
+        self.exposure_label = QLabel("多: -- / 空: -- / 净: --")
+        cash_layout.addRow("多空敞口:", self.exposure_label)
 
         layout.addWidget(cash_group)
 
@@ -635,6 +654,217 @@ class TradingPanel(QWidget):
         except Exception as e:
             logger.error(f"Buy button click failed: {e}")
             self.error_occurred.emit(f"买入操作失败: {e}")
+
+    def _resolve_position_risk_monitor(self):
+        """R271: 解析 PositionRiskMonitor (容器 SINGLETON, service_bootstrap.py:1536-1544)。
+
+        失败返回 None (不抛异常, 风控降级放行原则)。
+        """
+        try:
+            if self._service_container is None:
+                return None
+            from core.trading.position_risk_monitor import PositionRiskMonitor
+            resolve = getattr(
+                self._service_container, 'try_resolve', self._service_container.resolve)
+            return resolve(PositionRiskMonitor)
+        except Exception as e:
+            logger.warning(f"解析 PositionRiskMonitor 失败: {e}")
+            return None
+
+    @pyqtSlot()
+    def _on_suggest_quantity_clicked(self) -> None:
+        """R271: 资金管理生产消费点 — calculate_position_size 建议下单量。
+
+        输入: 当前价格 + 可用资金 + 止损参考价 (无止损位时固定 2% 风险降级);
+        输出: 建议数量写入 buy_quantity_spin。计算失败仅提示, 不阻断手动下单。
+        """
+        try:
+            if not self._current_stock_code:
+                QMessageBox.warning(self, "建议数量", "请先选择股票")
+                return
+
+            current_price = self._get_current_price()
+            if not current_price:
+                current_price = float(self.price_spin.value())
+                if current_price <= 0:
+                    QMessageBox.warning(self, "建议数量", "无法获取当前价格")
+                    return
+            else:
+                # R272: _get_current_price 返回 Decimal (L1237), 统一转 float
+                # 避免 Decimal * float 抛 TypeError (原 R271 实现此路径必失败)
+                current_price = float(current_price)
+
+            if not self._portfolio:
+                QMessageBox.warning(self, "建议数量", "无法获取投资组合信息")
+                return
+            available_cash = float(self._portfolio.available_cash)
+
+            monitor = self._resolve_position_risk_monitor()
+            if monitor is None:
+                QMessageBox.warning(self, "建议数量", "风控服务未就绪 (PositionRiskMonitor 未注册)")
+                return
+
+            # 无止损位时固定 2% 风险降级 (对应 EnhancedMoneyManager 默认 risk_per_trade=0.02)
+            stop_loss_price = current_price * 0.98
+            size = monitor.calculate_position_size(
+                current_price=current_price,
+                stop_loss_price=stop_loss_price,
+                available_cash=available_cash)
+
+            if size and size > 0:
+                self.buy_quantity_spin.setValue(int(size))
+                QMessageBox.information(
+                    self, "建议数量",
+                    f"基于资金管理的建议买入量: {int(size)} 股\n"
+                    f"当前价格: ¥{current_price:.2f}\n"
+                    f"止损参考: ¥{stop_loss_price:.2f} (2% 风险)")
+            else:
+                QMessageBox.warning(
+                    self, "建议数量",
+                    "资金管理计算无有效建议 (可用资金不足或止损距离为零)")
+
+        except Exception as e:
+            logger.error(f"建议数量计算失败: {e}")
+            QMessageBox.warning(self, "建议数量", f"计算失败: {e}")
+
+    def _compute_exposure(self) -> Dict[str, float]:
+        """R272: 计算多空敞口市值 (long/short/net), 供展示文本与预警比例共用。
+
+        适配: PositionManager.calculate_exposure (position_manager.py:101-102) 消费
+        position_type 字段; 系统 Position 模型 (account_models.Position :364 side /
+        trading_service.Position :127-137 无方向) 结构不同 → 统一转换为 position_type。
+        数据源1: 账户真实持仓 (含 side); 数据源2: 内存持仓 (无方向, 全按多头)。
+        失败返回全 0 (不抛异常, 风控降级放行原则)。
+        """
+        try:
+            monitor = self._resolve_position_risk_monitor()
+            if monitor is None:
+                return {'long': 0.0, 'short': 0.0, 'net': 0.0}
+
+            from core.trading_engine import PositionType
+
+            positions = []
+            # 数据源1: AccountManager 账户持仓 (account_models.Position, 含 side)
+            account_positions = None
+            if self._service_container is not None:
+                account_id = None
+                if hasattr(self, 'ctp_account_combo') and self.ctp_account_combo is not None:
+                    try:
+                        account_id = self.ctp_account_combo.currentData()
+                    except Exception:
+                        account_id = None
+                if account_id:
+                    try:
+                        from core.trading.account_manager import AccountManager
+                        resolve_am = getattr(
+                            self._service_container, 'try_resolve', self._service_container.resolve)
+                        account_manager = resolve_am(AccountManager)
+                        if account_manager is not None:
+                            account_positions = account_manager.get_account_positions(account_id)
+                    except Exception as e:
+                        logger.warning(f"AccountManager 持仓查询失败, 回退内存持仓: {e}")
+
+            if account_positions:
+                for p in account_positions:
+                    side_val = getattr(getattr(p, 'side', None), 'value', None)
+                    positions.append(types.SimpleNamespace(
+                        quantity=p.quantity,
+                        current_price=float(p.current_price),
+                        position_type=(
+                            PositionType.LONG if side_val == 'long' else PositionType.SHORT)))
+            elif self._portfolio and self._portfolio.positions:
+                # 数据源2: 内存持仓 (trading_service.Position 无 side, 全按多头)
+                for p in self._portfolio.positions.values():
+                    positions.append(types.SimpleNamespace(
+                        quantity=p.quantity,
+                        current_price=float(p.current_price),
+                        position_type=PositionType.LONG))
+
+            if not positions:
+                return {'long': 0.0, 'short': 0.0, 'net': 0.0}
+
+            return monitor.calculate_exposure(positions)
+        except Exception as e:
+            logger.warning(f"敞口计算失败: {e}")
+            return {'long': 0.0, 'short': 0.0, 'net': 0.0}
+
+    def _compute_exposure_display(self) -> str:
+        """R271: 资金管理生产消费点 — calculate_exposure 多空敞口市值展示 (文本格式保持 R271)。"""
+        result = self._compute_exposure()
+        if not (result.get('long') or result.get('short') or result.get('net')):
+            return "多: -- / 空: -- / 净: --"
+        return (f"多: ¥{result.get('long', 0.0):,.0f} / "
+                f"空: ¥{result.get('short', 0.0):,.0f} / "
+                f"净: ¥{result.get('net', 0.0):,.0f}")
+
+    def _compute_net_exposure(self) -> float:
+        """R272: 净敞口市值 (供敞口预警: 净敞口/总资产比例判断)。"""
+        return float(self._compute_exposure().get('net', 0.0) or 0.0)
+
+    @pyqtSlot()
+    def _on_suggest_sell_quantity_clicked(self) -> None:
+        """R272: 资金管理消费延伸 — 卖出侧建议平仓量。
+
+        对称买入侧 (R271 _on_suggest_quantity_clicked): 用 PositionRiskMonitor.
+        calculate_position_size 计算风控目标持仓量 target, 与当前持仓量比较:
+        - 持仓 > target → 建议减仓量 (position.quantity - target) 写入 sell_quantity_spin;
+        - 持仓 <= target → 建议全部平仓 (position.quantity) 写入 spin。
+        monitor 不可用 → 降级直接建议全部平仓。任何异常仅 logger.warning, 不阻断手动下单。
+        """
+        try:
+            if not self._current_stock_code:
+                QMessageBox.warning(self, "建议平仓", "请先选择股票")
+                return
+
+            current_price = self._get_current_price()
+            if not current_price:
+                current_price = float(self.price_spin.value())
+                if current_price <= 0:
+                    QMessageBox.warning(self, "建议平仓", "无法获取当前价格")
+                    return
+            current_price = float(current_price)
+
+            position = self.trading_service.get_position(self._current_stock_code)
+            if not position or position.quantity <= 0:
+                QMessageBox.warning(self, "建议平仓", "当前无持仓")
+                return
+
+            monitor = self._resolve_position_risk_monitor()
+            if monitor is None:
+                # 降级: 直接建议全部平仓 (风控降级放行原则)
+                self.sell_quantity_spin.setValue(int(position.quantity))
+                QMessageBox.information(
+                    self, "建议平仓",
+                    f"风控服务未就绪, 建议全部平仓: {int(position.quantity)} 股")
+                return
+
+            if not self._portfolio:
+                QMessageBox.warning(self, "建议平仓", "无法获取投资组合信息")
+                return
+            available_cash = float(self._portfolio.available_cash)
+
+            # 与买入侧对称参数: 无止损位时固定 2% 风险降级
+            stop_loss_price = current_price * 0.98
+            target = monitor.calculate_position_size(
+                current_price=current_price,
+                stop_loss_price=stop_loss_price,
+                available_cash=available_cash)
+
+            if position.quantity > target:
+                reduce = position.quantity - target
+                self.sell_quantity_spin.setValue(int(reduce))
+                QMessageBox.information(
+                    self, "建议平仓",
+                    f"持仓 {int(position.quantity)} 股超过风控目标 {int(target)} 股, "
+                    f"建议减仓 {int(reduce)} 股")
+            else:
+                self.sell_quantity_spin.setValue(int(position.quantity))
+                QMessageBox.information(
+                    self, "建议平仓",
+                    f"持仓未超风控目标, 可全部平仓: {int(position.quantity)} 股")
+
+        except Exception as e:
+            logger.warning(f"建议平仓计算失败: {e}")
 
     @pyqtSlot()
     def _on_sell_clicked(self) -> None:
@@ -1090,6 +1320,25 @@ class TradingPanel(QWidget):
             # 更新资金信息
             self.available_cash_label.setText(f"¥{self._portfolio.available_cash:,.2f}")
             self.total_assets_label.setText(f"¥{self._portfolio.total_assets:,.2f}")
+
+            # R271: 资金管理生产消费点 — 多空敞口刷新
+            self.exposure_label.setText(self._compute_exposure_display())
+
+            # R272: 资金管理消费延伸 — 净敞口占总资产比例预警 (超阈值红色高亮 + tooltip)
+            total_assets = getattr(self._portfolio, 'total_assets', None)
+            if not total_assets:
+                total_assets = getattr(self._portfolio, 'available_cash', None) or 0
+            total_assets = float(total_assets)
+            net_exposure = self._compute_net_exposure()
+            if total_assets > 0 and abs(net_exposure) / total_assets > _EXPOSURE_WARN_RATIO:
+                self.exposure_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+                self.exposure_label.setToolTip(
+                    f"净敞口 ¥{net_exposure:,.0f} 占总资产比例 "
+                    f"{abs(net_exposure) / total_assets * 100:.1f}%, "
+                    f"超过阈值 {_EXPOSURE_WARN_RATIO * 100:.0f}%, 建议降低风险敞口")
+            else:
+                self.exposure_label.setStyleSheet("")
+                self.exposure_label.setToolTip("")
 
             # 更新组合概览
             self.total_assets_overview_label.setText(f"¥{self._portfolio.total_assets:,.2f}")

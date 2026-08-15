@@ -10,6 +10,7 @@
 """
 
 import re
+import json
 import time
 import requests
 import pandas as pd
@@ -53,7 +54,8 @@ class SinaConfig(PluginConfig):
 
         # 支持的市场和频率
         self.supported_markets = ["SH", "SZ", "HK", "US"]
-        self.supported_frequencies = ["D"]  # 新浪主要支持日线数据
+        # R275 扩展: 新浪 getKLineData 支持 5/15/30/60分钟 与 日线(scale=240) 历史K线
+        self.supported_frequencies = ["5m", "15m", "30m", "60m", "D"]
 
         # 请求限制
         self.rate_limit_requests = 100
@@ -125,9 +127,9 @@ class SinaPlugin(StandardDataSourcePlugin):
             "markets": self.config.supported_markets,
             "frequencies": self.config.supported_frequencies,
             "real_time_support": True,
-            "historical_data": True,  # 有限支持
+            "historical_data": True,  # R275 扩展: getKLineData 接口支持 5/15/30/60分钟+日线历史
             "max_symbols_per_request": 100,
-            "max_kline_count": 250,   # 新浪历史数据有限
+            "max_kline_count": 1023,  # 新浪历史K线最多 1023 根
             "rate_limit": f"{self.config.rate_limit_requests} requests/{self.config.rate_limit_period}s",
             "data_delay": "实时（约15秒延迟）",
             "supported_exchanges": ["SSE", "SZSE", "HKEX", "NYSE", "NASDAQ"],
@@ -157,7 +159,7 @@ class SinaPlugin(StandardDataSourcePlugin):
             supported_data_types=self.get_supported_data_types(),
             capabilities={
                 'real_time': True,
-                'historical': False,  # 仅支持当日数据
+                'historical': True,  # R275 扩展: 支持最近 1023 根历史K线(5/15/30/60分+日线)
                 'fund_flow': True,
                 'asset_list': True,
                 'rate_limit': 200,  # 每分钟请求数
@@ -290,12 +292,32 @@ class SinaPlugin(StandardDataSourcePlugin):
     def _internal_get_kdata(self, symbol: str, freq: str = "D",
                             start_date: str = None, end_date: str = None,
                             count: int = None) -> pd.DataFrame:
-        """获取K线数据（有限支持）"""
+        """获取K线数据（R275 扩展: 新浪历史K线 + 当日降级兜底）"""
         try:
-            # 新浪的历史数据支持有限，主要通过实时行情获取当日数据
-            self.logger.warning("新浪数据源对历史K线数据支持有限，建议使用其他数据源")
+            # R275 扩展: 优先使用新浪 getKLineData 接口获取历史K线（最近 N 根，最多 1023）
+            kline_df = self._fetch_sina_kline(symbol, freq, count)
+            if kline_df is not None and not kline_df.empty:
+                # 按起止日期裁剪（接口仅返回最近 N 根，无任意起止日期能力）
+                if start_date:
+                    try:
+                        start_ts = pd.to_datetime(
+                            str(start_date).replace('-', '').replace('/', ''))
+                        kline_df = kline_df[kline_df.index >= start_ts]
+                    except Exception:
+                        pass
+                if end_date:
+                    try:
+                        end_ts = pd.to_datetime(
+                            str(end_date).replace('-', '').replace('/', ''))
+                        kline_df = kline_df[kline_df.index <= end_ts]
+                    except Exception:
+                        pass
+                if not kline_df.empty:
+                    self.logger.debug(f"获取K线数据（历史）: {symbol} freq={freq} rows={len(kline_df)}")
+                    return kline_df
 
-            # 仅返回当日的简单数据
+            # 兜底: 新浪历史接口不可用/周期不支持时，返回当日实时降级数据
+            self.logger.warning("新浪历史K线接口不可用或周期不支持，回退当日降级数据")
             quote_data = self._internal_get_real_time_quotes([symbol])
             if not quote_data:
                 return pd.DataFrame()
@@ -366,6 +388,75 @@ class SinaPlugin(StandardDataSourcePlugin):
             raise
 
     # 辅助方法
+    # R275 扩展: 新浪历史K线周期映射（系统周期 -> 新浪 scale 分钟数）
+    # 支持 5/15/30/60分钟 与 日线(scale=240)；周/月接口不支持返回 None
+    _SINA_SCALE_MAP = {
+        'd': '240', '1d': '240', 'daily': '240', '240': '240', 'day': '240',
+        '5': '5', '5m': '5', '5min': '5',
+        '15': '15', '15m': '15', '15min': '15',
+        '30': '30', '30m': '30', '30min': '30',
+        '60': '60', '60m': '60', '1h': '60', '1hour': '60',
+    }
+
+    def _freq_to_sina_scale(self, freq: str) -> Optional[str]:
+        """系统周期 -> 新浪 scale（分钟数）；不支持的周期返回 None"""
+        key = str(freq or 'D').strip().lower()
+        return self._SINA_SCALE_MAP.get(key)
+
+    def _fetch_sina_kline(self, symbol: str, freq: str = "D",
+                          count: Optional[int] = None) -> pd.DataFrame:
+        """从新浪 getKLineData 接口获取历史K线（最近 N 根，最多 1023）"""
+        try:
+            if self._session is None:
+                self.logger.debug("新浪插件未连接，跳过历史K线请求")
+                return pd.DataFrame()
+
+            scale = self._freq_to_sina_scale(freq)
+            if scale is None:
+                self.logger.debug(f"新浪不支持周期 {freq}，跳过历史K线")
+                return pd.DataFrame()
+
+            sina_symbol = self._convert_to_sina_symbol(symbol)
+            if not sina_symbol:
+                return pd.DataFrame()
+
+            datalen = min(int(count or 500), 1023)
+            url = ("https://quotes.sina.cn/cn/api/jsonp_v2.php/"
+                   "var%20_data=/CN_MarketDataService.getKLineData")
+            params = {'symbol': sina_symbol, 'scale': scale, 'ma': 'no', 'datalen': datalen}
+
+            response = self._make_rate_limited_request(url, params)
+            if response is None or response.status_code != 200:
+                self.logger.warning(
+                    f"新浪历史K线请求失败: HTTP {response.status_code if response else '无响应'}")
+                return pd.DataFrame()
+
+            # JSONP 响应: var _data=[{...},...]; 提取数组部分
+            content = response.text
+            match = re.search(r'\[.*\]', content, re.S)
+            if not match:
+                self.logger.warning("新浪历史K线返回格式异常（无JSON数组）")
+                return pd.DataFrame()
+
+            rows = json.loads(match.group(0))
+            if not rows:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(rows)
+            df['datetime'] = pd.to_datetime(df['day'])
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            df = df.dropna(subset=['close'])
+            df = df.set_index('datetime')
+            df = df[['open', 'high', 'low', 'close', 'volume']]
+
+            self.logger.debug(f"新浪历史K线获取成功: {sina_symbol} scale={scale} rows={len(df)}")
+            return df
+
+        except Exception as e:
+            self.logger.error(f"新浪历史K线获取失败: {symbol} - {e}")
+            return pd.DataFrame()
+
     def _convert_to_sina_symbol(self, symbol: str) -> str:
         """将标准股票代码转换为新浪格式"""
         try:

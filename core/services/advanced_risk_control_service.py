@@ -16,8 +16,6 @@ from sklearn.model_selection import train_test_split
 import warnings
 warnings.filterwarnings('ignore')
 
-from ..risk_control import RiskControlStrategy, RiskMonitor
-
 
 class RiskLevel(Enum):
     """风险等级"""
@@ -95,8 +93,18 @@ class AdvancedRiskControlService:
     
     def __init__(self, service_container=None):
         self.service_container = service_container
-        self.risk_strategy = RiskControlStrategy()
-        self.risk_monitor = RiskMonitor()
+        # 持仓风险监控 (R273: 替换纯挂起实例 RiskControlStrategy/RiskMonitor,
+        # 由活跃组件 PositionRiskMonitor 承接, 优先容器解析, 失败降级直接实例化)
+        self.position_risk_monitor = None
+        try:
+            from core.trading.position_risk_monitor import PositionRiskMonitor
+            if self.service_container is not None:
+                self.position_risk_monitor = self.service_container.try_resolve(PositionRiskMonitor)
+            if self.position_risk_monitor is None:
+                self.position_risk_monitor = PositionRiskMonitor(None)
+        except Exception as e:
+            logger.warning(f"PositionRiskMonitor 初始化失败: {e}")
+            self.position_risk_monitor = None
         
         # 机器学习模型
         self.ml_models = {}

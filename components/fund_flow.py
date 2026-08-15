@@ -19,7 +19,6 @@ from core.stock_screener import StockScreener
 from core.services.unified_data_manager import UnifiedDataManager, get_unified_data_manager
 from components.stock_screener import StockScreenerWidget
 from pylab import mpl
-from gui.ui_components import BaseAnalysisPanel
 from gui.workflows.simplified_import_workflow import TemplateManager
 from utils.config_manager import ConfigManager
 from gui.widgets.analysis_tabs.base_tab import BaseAnalysisTab

@@ -32,7 +32,6 @@ from datetime import *
 import pandas as pd
 from PyQt5.QtGui import QColor, QKeySequence
 
-from .matplot_lib_widget import *
 import akshare as ak
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure

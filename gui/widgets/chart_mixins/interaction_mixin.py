@@ -6,7 +6,7 @@ import traceback
 from typing import Tuple
 import numpy as np
 import matplotlib.patches as mpatches
-from PyQt5.QtWidgets import QMenu, QFileDialog, QMessageBox, QApplication
+from PyQt5.QtWidgets import QAction, QActionGroup, QMenu, QFileDialog, QMessageBox, QApplication
 from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QPixmap
 import io
@@ -108,6 +108,20 @@ class InteractionMixin:
     def contextMenuEvent(self, event):
         """处理右键菜单事件"""
         menu = QMenu(self)
+        # R279 修复：图表类型右键切换真实生效（此前 ContextMenuManager 的
+        # chart_type_changed 信号全项目零消费，右键菜单为死 UI）。
+        type_menu = menu.addMenu("图表类型")
+        type_group = QActionGroup(type_menu)
+        current_type = getattr(self, 'chart_type', None) or getattr(self, '_current_chart_type', None) or 'K线图'
+        for name in ["K线图", "分时图", "美国线", "收盘价"]:
+            act = QAction(name, type_menu)
+            act.setCheckable(True)
+            act.setChecked(name == current_type)
+            act.triggered.connect(
+                lambda checked, n=name: self._switch_chart_type(n))
+            type_group.addAction(act)
+            type_menu.addAction(act)
+
         save_action = menu.addAction("保存图表为图片")
         export_action = menu.addAction("导出K线/指标数据")
         indicator_action = menu.addAction("添加/隐藏指标")
@@ -123,7 +137,9 @@ class InteractionMixin:
         elif action == export_action:
             self.export_kline_and_indicators()
         elif action == indicator_action:
-            self.request_indicator_dialog.emit()
+            # R283: 原 request_indicator_dialog 信号全项目零消费者（死入口）。
+            # 回收复用"指标▼"菜单（QMenu 指标列表 → region_indicator_selected → 下拉框链路）。
+            self._show_region_indicator_menu(event.globalPos())
         elif action == stat_action:
             self.trigger_stat_dialog()
         elif action == highlight_action:
@@ -134,9 +150,9 @@ class InteractionMixin:
             self.copy_chart_to_clipboard()
         elif action == refresh_action:
             try:
-                # 使用update_chart方法而不是refresh方法
+                # 使用update_chart方法而不是refresh方法（R267: 使用完整数据源）
                 if hasattr(self, 'current_kdata') and self.current_kdata is not None:
-                    self.update_chart({'kdata': self.current_kdata})
+                    self.update_chart({'kdata': self._get_render_kdata() if hasattr(self, '_get_render_kdata') else self.current_kdata})
                 else:
                     self.show_no_data("无数据")
             except Exception as e:
@@ -146,6 +162,34 @@ class InteractionMixin:
                     self.error_occurred.emit(f"刷新图表失败: {str(e)}")
         elif action == clear_highlight_action:
             self.clear_highlighted_candles()
+
+    def _switch_chart_type(self, chart_type: str):
+        """R279：右键菜单图表类型切换——就地重渲染当前K线（无需重新取数）
+
+        与中间面板工具栏"图表类型"下拉走同一渲染入口（update_chart 带 chart_type）。
+        """
+        try:
+            self.chart_type = chart_type
+            self._current_chart_type = chart_type
+            kdata = None
+            if hasattr(self, '_get_render_kdata'):
+                try:
+                    kdata = self._get_render_kdata()
+                except Exception:
+                    kdata = None
+            if kdata is None:
+                kdata = getattr(self, 'current_kdata', None)
+            if kdata is None or (hasattr(kdata, 'empty') and kdata.empty):
+                logger.warning("切换图表类型失败：当前无K线数据")
+                return
+            self.update_chart({
+                'kdata': kdata,
+                'chart_type': chart_type,
+                'title': getattr(self, 'stock_name', None),
+            })
+            logger.info(f"图表类型已切换为: {chart_type}")
+        except Exception as e:
+            logger.error(f"切换图表类型失败: {e}")
 
     def save_chart_image(self):
         """保存图表为图片"""
@@ -261,17 +305,17 @@ class InteractionMixin:
     def on_indicator_selected(self, indicators: list):
         """接收指标选择结果，更新active_indicators并刷新图表"""
         self.active_indicators = indicators
-        # 修复：传入当前K线数据，否则update_chart会因data=None直接返回
+        # 修复：传入当前K线数据，否则update_chart会因data=None直接返回（R267: 使用完整数据源）
         if hasattr(self, 'current_kdata') and self.current_kdata is not None and not self.current_kdata.empty:
-            self.update_chart({'kdata': self.current_kdata})
+            self.update_chart({'kdata': self._get_render_kdata() if hasattr(self, '_get_render_kdata') else self.current_kdata})
         else:
             logger.warning("on_indicator_selected: 没有可用的K线数据，无法更新图表")
 
     def _on_indicator_changed(self, indicators):
         """多屏同步所有激活指标，仅同步选中项（已废弃，自动同步主窗口get_current_indicators）"""
-        # 修复：传入当前K线数据，否则update_chart会因data=None直接返回
+        # 修复：传入当前K线数据，否则update_chart会因data=None直接返回（R267: 使用完整数据源）
         if hasattr(self, 'current_kdata') and self.current_kdata is not None and not self.current_kdata.empty:
-            self.update_chart({'kdata': self.current_kdata})
+            self.update_chart({'kdata': self._get_render_kdata() if hasattr(self, '_get_render_kdata') else self.current_kdata})
         else:
             logger.warning("_on_indicator_changed: 没有可用的K线数据，无法更新图表")
 
@@ -379,6 +423,10 @@ class InteractionMixin:
                        color='yellow', alpha=0.2, zorder=50)
 
         self.canvas.draw_idle()
+        # R279 修复：形态绘制后失效十字光标 blit 背景（同 signal_mixin），
+        # 避免鼠标移入时 restore_region 恢复旧快照擦除形态标记
+        if hasattr(self, '_invalidate_crosshair_background'):
+            self._invalidate_crosshair_background()
         self._current_pattern_signals = pattern_signals
         self._highlight_index = highlight_index
 

@@ -79,30 +79,6 @@ def test_app_metrics_service():
         traceback.print_exc()
         return False
 
-def test_system_monitor_tab():
-    """测试 system_monitor_tab_refactored"""
-    print("\n" + "=" * 60)
-    print("测试 3: system_monitor_tab_refactored 导入")
-    print("=" * 60)
-    
-    try:
-        # 不实例化 GUI 组件，只检查导入
-        import gui.widgets.performance.tabs.system_monitor_tab_refactored as smt
-        print("✓ system_monitor_tab_refactored 导入成功")
-        
-        # 检查 _collect_system_data 方法是否存在
-        if hasattr(smt.ModernSystemMonitorTab, '_collect_system_data'):
-            print("✓ _collect_system_data 方法存在")
-        
-        print("\n✓ 测试通过!")
-        return True
-        
-    except Exception as e:
-        print(f"✗ 测试失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
 def test_timer_consistency():
     """测试计时器一致性"""
     print("\n" + "=" * 60)
@@ -136,7 +112,6 @@ def main():
     
     results.append(("UnifiedPerformanceMonitor", test_unified_monitor()))
     results.append(("AppMetricsService", test_app_metrics_service()))
-    results.append(("system_monitor_tab_refactored", test_system_monitor_tab()))
     results.append(("计时器一致性", test_timer_consistency()))
     
     print("\n" + "=" * 60)

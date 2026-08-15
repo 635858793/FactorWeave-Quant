@@ -105,6 +105,12 @@ class TETDataPipeline:
         # (如本地数据缺失重试循环/网络半开连接) 长时间阻塞故障转移流程
         self._per_source_timeout = 10.0
 
+        # R283: 数据源失败冷却（秒）。不可用源在冷却期内直接快速失败，不执行
+        # 真实 connect（HTTP 探测最长 10s 超时），避免每次股票切换全流程串行
+        # 等待慢源。熔断恢复期(默认 60s)的 HALF_OPEN 放行也被冷却期拦截为快速失败。
+        self._source_cooldown_seconds = 300
+        self._source_cooldowns: Dict[str, float] = {}
+
         # 性能统计
         self._stats = {
             "total_requests": 0,
@@ -563,7 +569,21 @@ class TETDataPipeline:
                 return pd.DataFrame(), {}, failover_result
         else:
             # 只有在没有指定数据源时才获取所有可用数据源
-            available_sources = self.router.get_available_sources(routing_request)
+            # R286 修复1：优先使用"健康度+质量画像"加权排序的候选源（质量高者先尝试），
+            # 替代此前的 get_available_sources 纯熔断过滤（默认源恒第一、failover 顺序碰运气）。
+            # 兼容性：旧 router 无该方法、或返回非 list（如测试 MagicMock）时回退默认顺序。
+            available_sources = None
+            get_sources = getattr(self.router, 'get_prioritized_sources', None)
+            if callable(get_sources):
+                try:
+                    candidate = get_sources(routing_request)
+                except Exception as source_error:
+                    self.logger.debug(f"数据源质量加权排序失败，回退默认顺序: {source_error}")
+                    candidate = None
+                if isinstance(candidate, list):
+                    available_sources = candidate
+            if available_sources is None:
+                available_sources = self.router.get_available_sources(routing_request)
 
             if not available_sources:
                 failover_result = FailoverResult(
@@ -605,12 +625,39 @@ class TETDataPipeline:
                     error_messages.append(error_msg)
                     failed_sources.append(source_id)
                     self.logger.warning(error_msg)
+                    # R283: 超时=确定性故障（网络黑洞/接口挂起），即时熔断 + 冷却，
+                    # 不再等待 3 次连续失败才熔断（前 2 次切换股票必然全量扫描慢源）。
+                    try:
+                        self.router.mark_unavailable(source_id)
+                    except Exception:
+                        pass
+                    self._source_cooldowns[source_id] = time.time() + self._source_cooldown_seconds
                     continue
                 finally:
                     # 不等待超时后可能遗留的子线程, 避免阻塞主流程
                     executor.shutdown(wait=False)
 
                 if raw_data is not None and not raw_data.empty:
+                    # R285 修复3：TET failover 质量门槛——"非空"不等于"可用"。
+                    # 此前只要非空即判定成功：字段残缺/OHLC 逻辑异常的 K 线也会被
+                    # 采用，且失败转移无质量加权（默认源永远第一）。对 HISTORICAL_KLINE
+                    # 增加轻量质量校验，不合格视为该源失败，继续尝试下一数据源。
+                    if (original_query.data_type == DataType.HISTORICAL_KLINE
+                            and not self._is_kline_quality_acceptable(raw_data)):
+                        error_msg = (f"数据源 {source_id} 返回的K线数据质量不合格"
+                                     f"（必需字段/OHLC逻辑/负值校验未通过）")
+                        error_messages.append(error_msg)
+                        failed_sources.append(source_id)
+                        # 与空数据一致：写回 router 视为失败，累积健康指标
+                        try:
+                            self.router.record_request_result(source_id, success=False,
+                                                       response_time_ms=(time.time() - start_time) * 1000,
+                                                       error=error_msg)
+                        except Exception:
+                            pass
+                        self.logger.warning(error_msg)
+                        continue
+
                     provider_info = {
                         'provider': source_id,
                         'plugin_info': adapter.get_plugin_info(),
@@ -627,17 +674,46 @@ class TETDataPipeline:
                     )
 
                     self.logger.info(f"数据提取成功: {source_id} (尝试{attempts}次)")
+                    # R277: 成功写回 router（熔断恢复/健康指标提升）
+                    try:
+                        self.router.record_request_result(source_id, success=True,
+                                                   response_time_ms=(time.time() - start_time) * 1000)
+                    except Exception:
+                        pass
+                    # R283: 真实请求成功清除失败冷却
+                    self._source_cooldowns.pop(source_id, None)
                     return raw_data, provider_info, failover_result
                 else:
                     error_msg = f"数据源返回空数据: {source_id}"
                     error_messages.append(error_msg)
                     failed_sources.append(source_id)
+                    # R277: 空数据写回 router（视为失败，累积健康指标）
+                    try:
+                        self.router.record_request_result(source_id, success=False,
+                                                   response_time_ms=(time.time() - start_time) * 1000,
+                                                   error=error_msg)
+                    except Exception:
+                        pass
 
             except Exception as e:
                 error_msg = f"数据源异常 {source_id}: {str(e)}"
                 error_messages.append(error_msg)
                 failed_sources.append(source_id)
                 self.logger.warning(error_msg)
+                # R277: 异常写回 router。
+                # 连接失败（RemoteDisconnected 等确定性故障）即时熔断（mark_unavailable），
+                # 其余统计型失败走 record_request 累积，达到阈值后熔断。
+                try:
+                    if "数据源连接失败" in str(e):
+                        self.router.mark_unavailable(source_id)
+                    else:
+                        self.router.record_request_result(source_id, success=False,
+                                                   response_time_ms=(time.time() - start_time) * 1000,
+                                                   error=error_msg)
+                    # R283: 连接/提取异常均进入失败冷却，冷却期内不再真实 connect
+                    self._source_cooldowns[source_id] = time.time() + self._source_cooldown_seconds
+                except Exception:
+                    pass
 
         # 所有数据源都失败
         self._stats["fallback_used"] += 1
@@ -653,10 +729,44 @@ class TETDataPipeline:
 
         return pd.DataFrame(), {}, failover_result
 
+    def _is_kline_quality_acceptable(self, df: pd.DataFrame) -> bool:
+        """R285 修复3：K线数据轻量质量门槛（必需列 + OHLC 逻辑 + 无负值）
+
+        TET failover 主链路性能敏感，不做完整六维评分；校验口径与落库侧
+        AssetDatabaseManager._validate_kline_data_quality 保持一致，
+        通过才视为"可用数据"（否则继续故障转移下一数据源）。
+        """
+        try:
+            required = ['open', 'high', 'low', 'close']
+            if df is None or df.empty:
+                return False
+            if not all(col in df.columns for col in required):
+                return False
+            # OHLC 逻辑：high >= max(open,close,low) 且 low <= min(open,close,high)
+            if (df['high'] < df[['open', 'close', 'low']].max(axis=1)).any():
+                return False
+            if (df['low'] > df[['open', 'close', 'high']].min(axis=1)).any():
+                return False
+            # 价格/成交量无负值
+            check_cols = required + (['volume'] if 'volume' in df.columns else [])
+            for col in check_cols:
+                if (df[col] < 0).any():
+                    return False
+            return True
+        except Exception:
+            return False
+
     def _try_source_once(self, adapter: DataSourcePluginAdapter,
                          routing_request: RoutingRequest,
                          original_query: StandardQuery) -> pd.DataFrame:
         """在子线程中执行单次数据源尝试（连接检查 + 连接 + 提取）"""
+        # R283: 失败冷却——冷却期内的源直接快速失败（Raise，不执行真实 connect），
+        # 避免不可用源每次切换股票都吃满 10s HTTP 探测超时（串行 failover 下
+        # N 个慢源 = N×10s）。熔断 HALF_OPEN 放行（60s 恢复期）同样被冷却期拦截。
+        cooldown_until = self._source_cooldowns.get(adapter.plugin_id, 0)
+        if time.time() < cooldown_until:
+            raise RuntimeError(
+                f"数据源连接失败: {adapter.plugin_id} (冷却期内，跳过连接)")
         if not adapter.is_connected():
             if not adapter.connect():
                 raise RuntimeError(f"数据源连接失败: {adapter.plugin_id}")
@@ -682,7 +792,8 @@ class TETDataPipeline:
                 freq=original_query.period,
                 start_date=original_query.start_date,
                 end_date=original_query.end_date,
-                count=original_query.extra_params.get('count')
+                count=original_query.extra_params.get('count'),
+                asset_type=original_query.asset_type  # R275: 透传资产类型，适配器签名自适应
             )
         elif original_query.data_type == DataType.REAL_TIME_QUOTE:
             return adapter.get_real_time_quotes([original_query.symbol])

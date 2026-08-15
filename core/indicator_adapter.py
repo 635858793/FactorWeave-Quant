@@ -501,30 +501,227 @@ def get_talib_chinese_name(english_name: str) -> str:
     # 如果没有找到，使用默认映射
     chinese_name_map = {
         'MA': '移动平均线',
+        'SMA': '简单移动平均',
         'EMA': '指数移动平均',
+        'WMA': '加权移动平均',
+        'DEMA': '双重指数移动平均',
+        'TEMA': '三重指数移动平均',
+        'TRIMA': '三角移动平均',
+        'KAMA': '考夫曼自适应移动平均',
+        'MAMA': 'MESA自适应移动平均',
+        'T3': '三重平滑移动平均',
         'MACD': 'MACD指标',
+        'MACDEXT': 'MACD扩展',
+        'MACDFIX': 'MACD修正',
         'RSI': '相对强弱指标',
         'BBANDS': '布林带',
+        'BOLL': '布林带',  # 别名
         'KDJ': 'KDJ随机指标',
         'CCI': '商品通道指标',
         'ATR': '平均真实波幅',
+        'NATR': '归一化平均真实波幅',
         'OBV': '能量潮指标',
         'STOCH': '随机震荡指标',
+        'STOCHF': '快速随机指标',
+        'STOCHRSI': 'RSI随机指标',
         'WILLR': '威廉指标',
         'ROC': '变动率指标',
+        'ROCP': '变动率百分比',
+        'ROCR': '变动率比率',
+        'ROCR100': '变动率比率100',
         'MOM': '动量指标',
         'ADX': '平均方向性指标',
+        'ADXR': '平均方向性指标均值',
+        'APO': '绝对价格震荡',
+        'AROON': '阿隆指标',
+        'AROONOSC': '阿隆震荡',
+        'BOP': '力量平衡',
+        'CMO': '钱德动量',
+        'DX': '方向性指标',
+        'PLUS_DI': '正向方向指标',
+        'MINUS_DI': '负向方向指标',
+        'PLUS_DM': '正向方向变动',
+        'MINUS_DM': '负向方向变动',
+        'PPO': '价格动量指标',
+        'TRIX': '三重指数平滑',
+        'ULTOSC': '终极震荡指标',
         'SAR': '抛物线指标',
-        'TRIX': 'TRIX指标',
+        'SAREXT': '抛物线扩展',
+        'AD': '积累分布线',
+        'ADOSC': '佳庆线',
         'MFI': '资金流量指标',
-        'BOLL': '布林带',  # 别名
-        'SMA': '简单移动平均',
-        'WMA': '加权移动平均',
-        'DEMA': '双重指数移动平均',
-        'TEMA': '三重指数移动平均'
+        'HT_TRENDLINE': '希尔伯特趋势线',
+        'MIDPOINT': '中点价格',
+        'MIDPRICE': '中间价',
+        'LINEARREG': '线性回归',
+        'LINEARREG_ANGLE': '线性回归角度',
+        'LINEARREG_INTERCEPT': '线性回归截距',
+        'LINEARREG_SLOPE': '线性回归斜率',
+        'STDDEV': '标准差',
+        'TSF': '时间序列预测',
+        'VAR': '方差',
     }
 
     return chinese_name_map.get(english_name.upper(), english_name)
+
+_MATYPE_CHOICES = ['SMA', 'EMA', 'WMA', 'DEMA', 'TEMA', 'TRIMA', 'KAMA', 'MAMA', 'T3']
+
+# R282: TA-Lib 指标参数兜底配置（DB indicator_parameters 表无记录时使用，
+# 覆盖 KAMA/MAMA/TEMA 等 42 项未种子指标，参数契约与 middle_panel._TALIB_DEFAULT_PARAMS 对齐）。
+_FALLBACK_INDICATOR_CONFIGS: Dict[str, Dict[str, Any]] = {
+    'MA': {'name': 'MA', 'display_name': '移动平均线', 'description': '简单移动平均线',
+           'params': {'timeperiod': {'desc': '周期', 'default': 20, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'SMA': {'name': 'SMA', 'display_name': '简单移动平均', 'description': '简单移动平均线',
+            'params': {'timeperiod': {'desc': '周期', 'default': 20, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'EMA': {'name': 'EMA', 'display_name': '指数移动平均', 'description': '指数移动平均线',
+            'params': {'timeperiod': {'desc': '周期', 'default': 30, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'WMA': {'name': 'WMA', 'display_name': '加权移动平均', 'description': '加权移动平均线',
+            'params': {'timeperiod': {'desc': '周期', 'default': 30, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'DEMA': {'name': 'DEMA', 'display_name': '双重指数移动平均', 'description': '双重指数移动平均线',
+             'params': {'timeperiod': {'desc': '周期', 'default': 30, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'TEMA': {'name': 'TEMA', 'display_name': '三重指数移动平均', 'description': '三重指数移动平均线',
+             'params': {'timeperiod': {'desc': '周期', 'default': 30, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'TRIMA': {'name': 'TRIMA', 'display_name': '三角移动平均', 'description': '三角移动平均线',
+              'params': {'timeperiod': {'desc': '周期', 'default': 30, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'KAMA': {'name': 'KAMA', 'display_name': '考夫曼自适应移动平均', 'description': '考夫曼自适应移动平均线',
+             'params': {'timeperiod': {'desc': '效率比周期', 'default': 10, 'min': 1, 'max': 1000, 'type': 'int'},
+                        'fastlimit': {'desc': '快速平滑常数', 'default': 0.666, 'min': 0.01, 'max': 1.0, 'type': 'float'},
+                        'slowlimit': {'desc': '慢速平滑常数', 'default': 0.0645, 'min': 0.01, 'max': 1.0, 'type': 'float'}}},
+    'MAMA': {'name': 'MAMA', 'display_name': 'MESA自适应移动平均', 'description': 'MESA自适应移动平均',
+             'params': {'fastlimit': {'desc': '快速限制', 'default': 0.5, 'min': 0.01, 'max': 1.0, 'type': 'float'},
+                        'slowlimit': {'desc': '慢速限制', 'default': 0.05, 'min': 0.01, 'max': 1.0, 'type': 'float'}}},
+    'T3': {'name': 'T3', 'display_name': '三重平滑移动平均', 'description': '三重平滑移动平均线',
+           'params': {'timeperiod': {'desc': '周期', 'default': 5, 'min': 1, 'max': 1000, 'type': 'int'},
+                      'vfactor': {'desc': '成交量因子', 'default': 0.7, 'min': 0.0, 'max': 1.0, 'type': 'float'}}},
+    'MACD': {'name': 'MACD', 'display_name': 'MACD指标', 'description': '移动平均收敛发散指标',
+             'params': {'fastperiod': {'desc': '快速周期', 'default': 12, 'min': 1, 'max': 100, 'type': 'int'},
+                        'slowperiod': {'desc': '慢速周期', 'default': 26, 'min': 1, 'max': 500, 'type': 'int'},
+                        'signalperiod': {'desc': '信号周期', 'default': 9, 'min': 1, 'max': 100, 'type': 'int'}}},
+    'MACDEXT': {'name': 'MACDEXT', 'display_name': 'MACD扩展', 'description': '可定制均线类型的MACD',
+                'params': {'fastperiod': {'desc': '快速周期', 'default': 12, 'min': 1, 'max': 100, 'type': 'int'},
+                           'fastmatype': {'desc': '快速均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES},
+                           'slowperiod': {'desc': '慢速周期', 'default': 26, 'min': 1, 'max': 500, 'type': 'int'},
+                           'slowmatype': {'desc': '慢速均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES},
+                           'signalperiod': {'desc': '信号周期', 'default': 9, 'min': 1, 'max': 100, 'type': 'int'},
+                           'signalmatype': {'desc': '信号均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES}}},
+    'MACDFIX': {'name': 'MACDFIX', 'display_name': 'MACD修正', 'description': 'MACD固定均线类型',
+                'params': {'signalperiod': {'desc': '信号周期', 'default': 9, 'min': 1, 'max': 100, 'type': 'int'}}},
+    'RSI': {'name': 'RSI', 'display_name': '相对强弱指标', 'description': '相对强弱指标',
+            'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'STOCH': {'name': 'STOCH', 'display_name': '随机指标', 'description': '随机指标KD',
+              'params': {'fastk_period': {'desc': '快速K周期', 'default': 5, 'min': 1, 'max': 100, 'type': 'int'},
+                         'slowk_period': {'desc': '慢速K周期', 'default': 3, 'min': 1, 'max': 100, 'type': 'int'},
+                         'slowk_matype': {'desc': '慢K均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES},
+                         'slowd_period': {'desc': '慢D周期', 'default': 3, 'min': 1, 'max': 100, 'type': 'int'},
+                         'slowd_matype': {'desc': '慢D均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES}}},
+    'STOCHF': {'name': 'STOCHF', 'display_name': '快速随机指标', 'description': '快速随机指标',
+               'params': {'fastk_period': {'desc': '快速K周期', 'default': 5, 'min': 1, 'max': 100, 'type': 'int'},
+                          'fastd_period': {'desc': '快速D周期', 'default': 3, 'min': 1, 'max': 100, 'type': 'int'},
+                          'fastd_matype': {'desc': '快速D均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES}}},
+    'STOCHRSI': {'name': 'STOCHRSI', 'display_name': 'RSI随机指标', 'description': 'RSI随机指标',
+                 'params': {'timeperiod': {'desc': 'RSI周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'},
+                            'fastk_period': {'desc': '快速K周期', 'default': 5, 'min': 1, 'max': 100, 'type': 'int'},
+                            'fastd_period': {'desc': '快速D周期', 'default': 3, 'min': 1, 'max': 100, 'type': 'int'},
+                            'fastd_matype': {'desc': '快速D均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES}}},
+    'BBANDS': {'name': 'BBANDS', 'display_name': '布林带', 'description': '布林带指标',
+               'params': {'timeperiod': {'desc': '周期', 'default': 20, 'min': 1, 'max': 1000, 'type': 'int'},
+                          'nbdevup': {'desc': '上带偏差', 'default': 2.0, 'min': 0.1, 'max': 10.0, 'type': 'float'},
+                          'nbdevdn': {'desc': '下带偏差', 'default': 2.0, 'min': 0.1, 'max': 10.0, 'type': 'float'}}},
+    'BOLL': {'name': 'BOLL', 'display_name': '布林带', 'description': '布林带指标',
+             'params': {'timeperiod': {'desc': '周期', 'default': 5, 'min': 1, 'max': 1000, 'type': 'int'},
+                        'nbdevup': {'desc': '上带倍数', 'default': 2.0, 'min': 0.1, 'max': 10.0, 'type': 'float'},
+                        'nbdevdn': {'desc': '下带倍数', 'default': 2.0, 'min': 0.1, 'max': 10.0, 'type': 'float'}}},
+    'ADX': {'name': 'ADX', 'display_name': '平均方向指数', 'description': '平均方向指数指标',
+            'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'ADXR': {'name': 'ADXR', 'display_name': '平均方向性指标均值', 'description': '平均方向性指标均值',
+             'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'APO': {'name': 'APO', 'display_name': '绝对价格震荡', 'description': '绝对价格震荡指标',
+            'params': {'fastperiod': {'desc': '快速周期', 'default': 12, 'min': 1, 'max': 100, 'type': 'int'},
+                       'slowperiod': {'desc': '慢速周期', 'default': 26, 'min': 1, 'max': 500, 'type': 'int'},
+                       'matype': {'desc': '均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES}}},
+    'AROON': {'name': 'AROON', 'display_name': '阿隆指标', 'description': '阿隆指标',
+              'params': {'timeperiod': {'desc': '周期', 'default': 25, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'AROONOSC': {'name': 'AROONOSC', 'display_name': '阿隆震荡', 'description': '阿隆震荡指标',
+                 'params': {'timeperiod': {'desc': '周期', 'default': 25, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'ATR': {'name': 'ATR', 'display_name': '平均真实波幅', 'description': '平均真实波幅指标',
+            'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'NATR': {'name': 'NATR', 'display_name': '归一化平均真实波幅', 'description': '归一化平均真实波幅',
+             'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'TRANGE': {'name': 'TRANGE', 'display_name': '真实波幅', 'description': '真实波幅指标', 'params': {}},
+    'CCI': {'name': 'CCI', 'display_name': '商品通道指数', 'description': '商品通道指数指标',
+            'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'CMO': {'name': 'CMO', 'display_name': '钱德动量', 'description': '钱德动量指标',
+            'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'DX': {'name': 'DX', 'display_name': '方向性指标', 'description': '方向性指标',
+           'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'PLUS_DI': {'name': 'PLUS_DI', 'display_name': '正向方向指标', 'description': '正向方向指标',
+                'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'MINUS_DI': {'name': 'MINUS_DI', 'display_name': '负向方向指标', 'description': '负向方向指标',
+                 'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'PLUS_DM': {'name': 'PLUS_DM', 'display_name': '正向方向变动', 'description': '正向方向变动',
+                'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'MINUS_DM': {'name': 'MINUS_DM', 'display_name': '负向方向变动', 'description': '负向方向变动',
+                 'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'PPO': {'name': 'PPO', 'display_name': '价格动量指标', 'description': '价格动量指标',
+            'params': {'fastperiod': {'desc': '快线周期', 'default': 12, 'min': 1, 'max': 100, 'type': 'int'},
+                       'slowperiod': {'desc': '慢线周期', 'default': 26, 'min': 1, 'max': 500, 'type': 'int'},
+                       'matype': {'desc': '均线类型', 'default': 0, 'type': 'choice', 'choices': _MATYPE_CHOICES}}},
+    'TRIX': {'name': 'TRIX', 'display_name': '三重指数平滑', 'description': '三重指数平滑指标',
+             'params': {'timeperiod': {'desc': '周期', 'default': 30, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'ULTOSC': {'name': 'ULTOSC', 'display_name': '终极震荡指标', 'description': '终极震荡指标',
+               'params': {'timeperiod1': {'desc': '周期1', 'default': 7, 'min': 1, 'max': 1000, 'type': 'int'},
+                          'timeperiod2': {'desc': '周期2', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'},
+                          'timeperiod3': {'desc': '周期3', 'default': 28, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'WILLR': {'name': 'WILLR', 'display_name': '威廉指标', 'description': '威廉指标',
+              'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'MOM': {'name': 'MOM', 'display_name': '动量指标', 'description': '动量指标',
+            'params': {'timeperiod': {'desc': '周期', 'default': 10, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'ROC': {'name': 'ROC', 'display_name': '变动率指标', 'description': '变动率指标',
+            'params': {'timeperiod': {'desc': '周期', 'default': 10, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'ROCP': {'name': 'ROCP', 'display_name': '变动率百分比', 'description': '变动率百分比',
+             'params': {'timeperiod': {'desc': '周期', 'default': 10, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'ROCR': {'name': 'ROCR', 'display_name': '变动率比率', 'description': '变动率比率',
+             'params': {'timeperiod': {'desc': '周期', 'default': 10, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'ROCR100': {'name': 'ROCR100', 'display_name': '变动率比率100', 'description': '变动率比率100',
+                'params': {'timeperiod': {'desc': '周期', 'default': 10, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'AD': {'name': 'AD', 'display_name': '积累分布线', 'description': '积累分布线指标', 'params': {}},
+    'ADOSC': {'name': 'ADOSC', 'display_name': '佳庆线', 'description': 'Chaikin A/D 振荡器指标',
+              'params': {'fastperiod': {'desc': '快速周期', 'default': 3, 'min': 1, 'max': 50, 'type': 'int'},
+                         'slowperiod': {'desc': '慢速周期', 'default': 10, 'min': 1, 'max': 100, 'type': 'int'}}},
+    'OBV': {'name': 'OBV', 'display_name': '能量潮指标', 'description': '能量潮指标', 'params': {}},
+    'MFI': {'name': 'MFI', 'display_name': '资金流量指标', 'description': '资金流量指标',
+            'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'BOP': {'name': 'BOP', 'display_name': '力量平衡', 'description': '力量平衡指标', 'params': {}},
+    'HT_TRENDLINE': {'name': 'HT_TRENDLINE', 'display_name': '希尔伯特趋势线', 'description': '希尔伯特趋势线', 'params': {}},
+    'MIDPOINT': {'name': 'MIDPOINT', 'display_name': '中点价格', 'description': '中点价格',
+                 'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'MIDPRICE': {'name': 'MIDPRICE', 'display_name': '中间价', 'description': '中间价',
+                 'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'LINEARREG': {'name': 'LINEARREG', 'display_name': '线性回归', 'description': '线性回归',
+                  'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'LINEARREG_ANGLE': {'name': 'LINEARREG_ANGLE', 'display_name': '线性回归角度', 'description': '线性回归角度',
+                        'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'LINEARREG_INTERCEPT': {'name': 'LINEARREG_INTERCEPT', 'display_name': '线性回归截距', 'description': '线性回归截距',
+                            'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'LINEARREG_SLOPE': {'name': 'LINEARREG_SLOPE', 'display_name': '线性回归斜率', 'description': '线性回归斜率',
+                        'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'STDDEV': {'name': 'STDDEV', 'display_name': '标准差', 'description': '标准差',
+               'params': {'timeperiod': {'desc': '周期', 'default': 5, 'min': 1, 'max': 1000, 'type': 'int'},
+                          'nbdev': {'desc': '偏差倍数', 'default': 1.0, 'min': 0.0, 'max': 10.0, 'type': 'float'}}},
+    'TSF': {'name': 'TSF', 'display_name': '时间序列预测', 'description': '时间序列预测',
+            'params': {'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 1000, 'type': 'int'}}},
+    'VAR': {'name': 'VAR', 'display_name': '方差', 'description': '方差',
+            'params': {'timeperiod': {'desc': '周期', 'default': 5, 'min': 1, 'max': 1000, 'type': 'int'},
+                       'nbdev': {'desc': '偏差倍数', 'default': 1.0, 'min': 0.0, 'max': 10.0, 'type': 'float'}}},
+    'SAR': {'name': 'SAR', 'display_name': '抛物线指标', 'description': '抛物线指标',
+            'params': {'acceleration': {'desc': '加速因子', 'default': 0.02, 'min': 0.0, 'max': 1.0, 'type': 'float'},
+                       'maximum': {'desc': '最大加速因子', 'default': 0.2, 'min': 0.0, 'max': 1.0, 'type': 'float'}}},
+    'KDJ': {'name': 'KDJ', 'display_name': 'KDJ随机指标', 'description': 'KDJ随机指标',
+            'params': {'fastk_period': {'desc': '快速K周期', 'default': 9, 'min': 1, 'max': 50, 'type': 'int'},
+                       'slowk_period': {'desc': '慢速K周期', 'default': 3, 'min': 1, 'max': 50, 'type': 'int'},
+                       'slowd_period': {'desc': '慢速D周期', 'default': 3, 'min': 1, 'max': 50, 'type': 'int'}}},
+}
+
 
 def get_indicator_params_config(english_name: str) -> Optional[Dict[str, Any]]:
     """
@@ -541,7 +738,9 @@ def get_indicator_params_config(english_name: str) -> Optional[Dict[str, Any]]:
         metadata = get_indicator_metadata(english_name)
 
         if not metadata:
-            return None
+            # R282: DB 无记录（如 KAMA/MAMA/TEMA 等未种子指标）→ 兜底代码常量配置，
+            # 修复参数对话框"无 tab/参数为空"问题（原来直接 return None 导致跳过）
+            return _FALLBACK_INDICATOR_CONFIGS.get(english_name.upper())
 
         # 构建参数配置
         params_config = {}
@@ -557,6 +756,9 @@ def get_indicator_params_config(english_name: str) -> Optional[Dict[str, Any]]:
                     'max': param.get('max_value'),
                     'type': param.get('type', 'int')
                 }
+                # R245: 透传 choices（choice 类型参数如 matype 的枚举，供参数 UI 下拉框使用）
+                if param.get('choices'):
+                    params_config[param_name]['choices'] = param['choices']
 
         return {
             'name': english_name,
@@ -567,121 +769,7 @@ def get_indicator_params_config(english_name: str) -> Optional[Dict[str, Any]]:
 
     except Exception as e:
         logger.error(f"获取指标 {english_name} 参数配置失败: {e}")
-
-        # 返回一些默认的参数配置
-        default_configs = {
-            'MA': {
-                'name': 'MA',
-                'display_name': '移动平均线',
-                'description': '简单移动平均线',
-                'params': {
-                    'timeperiod': {'desc': '周期', 'default': 20, 'min': 1, 'max': 200, 'type': 'int'}
-                }
-            },
-            'MACD': {
-                'name': 'MACD',
-                'display_name': 'MACD指标',
-                'description': '移动平均收敛发散指标',
-                'params': {
-                    'fastperiod': {'desc': '快速周期', 'default': 12, 'min': 1, 'max': 100, 'type': 'int'},
-                    'slowperiod': {'desc': '慢速周期', 'default': 26, 'min': 1, 'max': 100, 'type': 'int'},
-                    'signalperiod': {'desc': '信号周期', 'default': 9, 'min': 1, 'max': 50, 'type': 'int'}
-                }
-            },
-            'RSI': {
-                'name': 'RSI',
-                'display_name': '相对强弱指标',
-                'description': '相对强弱指标',
-                'params': {
-                    'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 100, 'type': 'int'}
-                }
-            },
-            'ADOSC': {
-                'name': 'ADOSC',
-                'display_name': '佳庆线',
-                'description': 'Chaikin A/D 振荡器指标',
-                'params': {
-                    'fastperiod': {'desc': '快速周期', 'default': 3, 'min': 1, 'max': 50, 'type': 'int'},
-                    'slowperiod': {'desc': '慢速周期', 'default': 10, 'min': 1, 'max': 100, 'type': 'int'}
-                }
-            },
-            'AD': {
-                'name': 'AD',
-                'display_name': '积累分布线',
-                'description': '积累分布线指标',
-                'params': {}
-            },
-            'OBV': {
-                'name': 'OBV',
-                'display_name': '能量潮',
-                'description': '能量潮指标',
-                'params': {}
-            },
-            'ATR': {
-                'name': 'ATR',
-                'display_name': '平均真实波幅',
-                'description': '平均真实波幅指标',
-                'params': {
-                    'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 100, 'type': 'int'}
-                }
-            },
-            'ADX': {
-                'name': 'ADX',
-                'display_name': '平均方向指数',
-                'description': '平均方向指数指标',
-                'params': {
-                    'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 100, 'type': 'int'}
-                }
-            },
-            'CCI': {
-                'name': 'CCI',
-                'display_name': '商品通道指数',
-                'description': '商品通道指数指标',
-                'params': {
-                    'timeperiod': {'desc': '周期', 'default': 20, 'min': 1, 'max': 100, 'type': 'int'}
-                }
-            },
-            'STOCH': {
-                'name': 'STOCH',
-                'display_name': '随机指标',
-                'description': '随机指标',
-                'params': {
-                    'fastk_period': {'desc': '快速K周期', 'default': 5, 'min': 1, 'max': 50, 'type': 'int'},
-                    'slowk_period': {'desc': '慢速K周期', 'default': 3, 'min': 1, 'max': 50, 'type': 'int'},
-                    'slowd_period': {'desc': '慢速D周期', 'default': 3, 'min': 1, 'max': 50, 'type': 'int'}
-                }
-            },
-            'BBANDS': {
-                'name': 'BBANDS',
-                'display_name': '布林带',
-                'description': '布林带指标',
-                'params': {
-                    'timeperiod': {'desc': '周期', 'default': 20, 'min': 1, 'max': 100, 'type': 'int'},
-                    'nbdevup': {'desc': '上带偏差', 'default': 2.0, 'min': 0.1, 'max': 5.0, 'type': 'float'},
-                    'nbdevdn': {'desc': '下带偏差', 'default': 2.0, 'min': 0.1, 'max': 5.0, 'type': 'float'}
-                }
-            },
-            'MFI': {
-                'name': 'MFI',
-                'display_name': '资金流量指标',
-                'description': '资金流量指标',
-                'params': {
-                    'timeperiod': {'desc': '周期', 'default': 14, 'min': 1, 'max': 100, 'type': 'int'}
-                }
-            },
-            'KDJ': {
-                'name': 'KDJ',
-                'display_name': 'KDJ随机指标',
-                'description': 'KDJ随机指标',
-                'params': {
-                    'fastk_period': {'desc': '快速K周期', 'default': 9, 'min': 1, 'max': 50, 'type': 'int'},
-                    'slowk_period': {'desc': '慢速K周期', 'default': 3, 'min': 1, 'max': 50, 'type': 'int'},
-                    'slowd_period': {'desc': '慢速D周期', 'default': 3, 'min': 1, 'max': 50, 'type': 'int'}
-                }
-            }
-        }
-
-        return default_configs.get(english_name.upper())
+        return _FALLBACK_INDICATOR_CONFIGS.get(english_name.upper())
 
 def get_indicator_default_params(indicator_name: str) -> dict:
     """

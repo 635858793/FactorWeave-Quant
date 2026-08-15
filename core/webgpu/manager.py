@@ -226,7 +226,7 @@ class WebGPUManager:
         """
         return self._render('render_volume', ax, data, style or {}, x, use_datetime_axis)
 
-    def render_line(self, ax, data, style: Dict[str, Any] = None) -> bool:
+    def render_line(self, ax, data, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True) -> bool:
         """
         渲染线图
 
@@ -234,11 +234,13 @@ class WebGPUManager:
             ax: matplotlib轴对象
             data: 线图数据
             style: 样式设置
+            x: 可选，X轴数据（与其他 renderer 接口对齐；WebGPU 路径按索引渲染）
+            use_datetime_axis: 是否使用datetime X轴（预留，与其他 renderer 对齐）
 
         Returns:
             是否渲染成功
         """
-        return self._render('render_line', ax, data, style or {})
+        return self._render('render_line', ax, data, style or {}, x, use_datetime_axis)
 
     def _render(self, method_name: str, *args, **kwargs) -> bool:
         """执行渲染操作"""

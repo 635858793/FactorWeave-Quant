@@ -505,6 +505,21 @@ class MainWindowCoordinator(BaseCoordinator):
             return self._panel_coordinator.get_panel(panel_name)
         return self._panels.get(panel_name)
 
+    def get_current_indicators(self) -> Optional[List[Dict[str, Any]]]:
+        """获取当前激活的技术指标列表（供 ChartWidget._get_active_indicators 查询）
+
+        状态源为 middle 面板 ChartWidget.active_indicators（契约格式 [{"name","params","group"}]，
+        由 middle_panel.on_indicator_changed 转换生成）。未设置时返回 None，由调用方走默认指标兜底。
+        """
+        try:
+            middle = self.get_panel('middle')
+            chart_canvas = getattr(middle, 'chart_canvas', None)
+            chart_widget = getattr(chart_canvas, 'chart_widget', None)
+            return getattr(chart_widget, 'active_indicators', None)
+        except Exception as e:
+            logger.error(f"获取当前指标失败: {str(e)}")
+            return None
+
     def show_message(self, message: str, level: str = 'info') -> None:
         """显示消息（使用队列，每条消息至少显示2秒）"""
         self._message_queue.append(message)
@@ -2887,6 +2902,9 @@ FactorWeave-Quant  2.0 (重构版本)
                     'auto_select_engine': True,
                     'monitoring_level': 'STANDARD'
                 }
+                # R277 修复：将中间面板"回测区间"同步到回测面板与参数。
+                # 原实现回测区间为死控件（无任何消费者），用户设置的日期不生效。
+                self._apply_middle_panel_backtest_range(default_params)
                 self._backtest_widget.start_backtest(default_params)
                 logger.info("从专用回测面板启动回测功能")
                 return
@@ -2936,6 +2954,34 @@ FactorWeave-Quant  2.0 (重构版本)
         except Exception as e:
             logger.error(f"启动回测失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法启动回测: {e}")
+
+    def _apply_middle_panel_backtest_range(self, params: dict) -> None:
+        """R277: 将中间面板"回测区间"同步到回测面板与回测参数
+
+        原实现中 middle_panel 的回测区间（start_date_edit/end_date_edit）为
+        无消费者死控件：既不触发任何信号逻辑，回测入口也不读取其日期。
+        现由 middle_panel.get_backtest_range() 提供日期，写入回测参数，
+        并同步到回测面板自身的日期控件（backtest_widget 从控件读取日期）。
+        """
+        try:
+            panels = getattr(self, '_panels', None)
+            middle_panel = panels.get('middle') if panels else None
+            if not middle_panel or not hasattr(middle_panel, 'get_backtest_range'):
+                return
+            start_str, end_str = middle_panel.get_backtest_range()
+            if not start_str or not end_str:
+                return
+            params['start_date'] = start_str
+            params['end_date'] = end_str
+            if hasattr(self, '_backtest_widget') and self._backtest_widget:
+                from PyQt5.QtCore import QDate
+                bw = self._backtest_widget
+                if hasattr(bw, 'start_date') and hasattr(bw, 'end_date'):
+                    bw.start_date.setDate(QDate.fromString(start_str, 'yyyy-MM-dd'))
+                    bw.end_date.setDate(QDate.fromString(end_str, 'yyyy-MM-dd'))
+                    logger.info(f"已同步中间面板回测区间到回测面板: {start_str} ~ {end_str}")
+        except Exception as e:
+            logger.warning(f"同步中间面板回测区间失败: {e}")
 
     def _on_professional_backtest(self) -> None:
         """启动专业回测功能（直接打开独立浮动窗口）"""

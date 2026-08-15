@@ -663,6 +663,22 @@ class SettingsDialog(BaseDialog):
             logger.error(f"重置GPU配置失败: {e}")
             QMessageBox.critical(self, "错误", f"重置GPU配置失败: {str(e)}")
 
+    def _apply_duckdb_config_to_manager(self, memory_gb: int, threads: int) -> bool:
+        """R288：将 GUI 配置注入全局 DuckDBConnectionManager（真正生效）
+
+        原实现走 DuckDBPerformanceOptimizer 在自建独立连接上 SET memory_limit/
+        threads，该连接与业务连接池完全脱节（"配置假生效"——业务侧仍用默认值）。
+        改为构建 manager 版 DuckDBConfig 并调用 apply_default_config：更新
+        _default_config 并重建现有池，后续业务连接（get_pool config=None 分支）
+        经 DuckDBConnectionPool._apply_config 对每个池连接真正 SET。
+        """
+        from core.database.duckdb_manager import get_connection_manager, DuckDBConfig
+        cfg = DuckDBConfig(
+            memory_limit=f"{memory_gb}GB",
+            threads=str(threads),
+        )
+        return get_connection_manager().apply_default_config(cfg)
+
     def _apply_quick_duckdb_config(self) -> None:
         """应用快速DuckDB配置"""
         try:
@@ -676,22 +692,10 @@ class SettingsDialog(BaseDialog):
                 self.config_service.set('duckdb.thread_count', threads)
                 logger.info("DuckDB配置已保存到配置服务")
 
-            from core.database.duckdb_performance_optimizer import DuckDBPerformanceOptimizer, WorkloadType
-
-            optimizer = DuckDBPerformanceOptimizer("data/factorweave_analytics.duckdb")
-
-            if "高性能模式" in mode:
-                workload = WorkloadType.OLAP
-            elif "内存节约模式" in mode:
-                workload = WorkloadType.OLTP
-            else:
-                workload = WorkloadType.MIXED
-
-            success = optimizer.apply_custom_config(
-                memory_limit_gb=memory_gb,
-                threads=threads,
-                workload_type=workload
-            )
+            # R288 修复：原 DuckDBPerformanceOptimizer 在自建独立连接上 SET 配置，
+            # 与业务连接池脱节（"假生效"）。改为注入全局 DuckDBConnectionManager，
+            # 业务连接（get_pool config=None 分支）经 _apply_config 真正生效。
+            success = self._apply_duckdb_config_to_manager(memory_gb, threads)
 
             if success:
                 self.duckdb_status_label.setText(f"状态: 已应用并保存 {mode} (内存: {memory_gb}GB, 线程: {threads})")
@@ -705,7 +709,7 @@ class SettingsDialog(BaseDialog):
                         font-weight: bold;
                     }
                 """)
-                logger.info(f"DuckDB配置已应用: 内存={memory_gb}GB, 线程={threads}, 模式={workload.value}")
+                logger.info(f"DuckDB配置已应用: 内存={memory_gb}GB, 线程={threads}, 模式={mode}")
                 QMessageBox.information(self, "成功", f"DuckDB配置已应用并保存:\n模式: {mode}\n内存: {memory_gb}GB\n线程: {threads}")
             else:
                 self.duckdb_status_label.setText("状态: 配置应用失败")
@@ -728,15 +732,8 @@ class SettingsDialog(BaseDialog):
                 self.config_service.set('duckdb.thread_count', 4)
                 logger.info("DuckDB默认配置已保存到配置服务")
 
-            from core.database.duckdb_performance_optimizer import DuckDBPerformanceOptimizer, WorkloadType
-
-            optimizer = DuckDBPerformanceOptimizer("data/factorweave_analytics.duckdb")
-
-            success = optimizer.apply_custom_config(
-                memory_limit_gb=8,
-                threads=4,
-                workload_type=WorkloadType.MIXED
-            )
+            # R288 修复：见 _apply_duckdb_config_to_manager（注入全局 manager，业务池真正生效）
+            success = self._apply_duckdb_config_to_manager(8, 4)
 
             if success:
                 self.duckdb_status_label.setText("状态: 已重置并应用默认配置 (内存: 8GB, 线程: 4)")
@@ -1256,25 +1253,11 @@ class SettingsDialog(BaseDialog):
             memory_gb = duckdb_config.get('memory_limit_gb', 8)
             threads = duckdb_config.get('thread_count', 4)
 
-            from core.database.duckdb_performance_optimizer import DuckDBPerformanceOptimizer, WorkloadType
-
-            optimizer = DuckDBPerformanceOptimizer("data/factorweave_analytics.duckdb")
-
-            if "高性能模式" in mode:
-                workload = WorkloadType.OLAP
-            elif "内存节约模式" in mode:
-                workload = WorkloadType.OLTP
-            else:
-                workload = WorkloadType.MIXED
-
-            success = optimizer.apply_custom_config(
-                memory_limit_gb=memory_gb,
-                threads=threads,
-                workload_type=workload
-            )
+            # R288 修复：见 _apply_duckdb_config_to_manager（注入全局 manager，业务池真正生效）
+            success = self._apply_duckdb_config_to_manager(memory_gb, threads)
 
             if success:
-                logger.info(f"DuckDB运行时配置已应用: 内存={memory_gb}GB, 线程={threads}, 模式={workload.value}")
+                logger.info(f"DuckDB运行时配置已应用: 内存={memory_gb}GB, 线程={threads}, 模式={mode}")
             else:
                 logger.warning(f"DuckDB运行时配置应用失败")
 

@@ -263,7 +263,8 @@ class EnhancedRealtimeDataManager:
         await self._ensure_callback_mode_started_async()
 
         # 调用插件的 subscribe_realtime_data 方法注册 callback
-        success = plugin.subscribe_realtime_data([symbol], adapter, data_type)
+        # R290 修复：插件签名统一为 (symbols, callback)，勿传 data_type（适配器自带）
+        success = plugin.subscribe_realtime_data([symbol], adapter)
 
         if not success:
             error_msg = f"Callback 模式订阅失败，插件 {plugin_id} 返回 False，无法订阅 {symbol} 的 {data_type.value} 数据"
@@ -1073,7 +1074,8 @@ class EnhancedRealtimeDataManager:
             adapter = PluginCallbackAdapter(self, plugin_id, DataType.LEVEL2_DATA)
             
             # 调用插件的 subscribe_realtime_data 方法注册 callback
-            success = plugin.subscribe_realtime_data([symbol], adapter, DataType.LEVEL2_DATA)
+            # R290 修复：插件签名统一为 (symbols, callback)，勿传 data_type（适配器自带）
+            success = plugin.subscribe_realtime_data([symbol], adapter)
             
             if success:
                 logger.info(f"✅ Callback 模式订阅成功：{symbol}")

@@ -95,37 +95,36 @@ class MarketEnvironment:
                 return {}
                 
             # 计算移动平均线
-            ma_short = calculate_indicator('MA', data, {'timeperiod': self.get_param("ma_short")})
-            ma_mid = calculate_indicator('MA', data, {'timeperiod': self.get_param("ma_mid")})
-            ma_long = calculate_indicator('MA', data, {'timeperiod': self.get_param("ma_long")})
+            ma_short = calculate_indicator('MA', data, timeperiod=self.get_param("ma_short"))
+            ma_mid = calculate_indicator('MA', data, timeperiod=self.get_param("ma_mid"))
+            ma_long = calculate_indicator('MA', data, timeperiod=self.get_param("ma_long"))
             
             # 计算 MACD
-            macd = calculate_indicator('MACD', data, {
-                'fast': self.get_param("macd_fast"),
-                'slow': self.get_param("macd_slow"), 
-                'signal': self.get_param("macd_signal")
-            })
+            macd = calculate_indicator('MACD', data,
+                fastperiod=self.get_param("macd_fast"),
+                slowperiod=self.get_param("macd_slow"),
+                signalperiod=self.get_param("macd_signal"))
             
             # 计算 RSI
-            rsi = calculate_indicator('RSI', data, {'timeperiod': self.get_param("rsi_period")})
+            rsi = calculate_indicator('RSI', data, timeperiod=self.get_param("rsi_period"))
             
             # 计算布林带
-            boll = calculate_indicator('BOLL', data, {
-                'timeperiod': self.get_param("boll_period"), 
-                'width': self.get_param("boll_width")
-            })
+            boll = calculate_indicator('BOLL', data,
+                timeperiod=self.get_param("boll_period"),
+                nbdevup=float(self.get_param("boll_width")),
+                nbdevdn=float(self.get_param("boll_width")))
             
             # 计算 ATR
-            atr = calculate_indicator('ATR', data, {'timeperiod': self.get_param("atr_period", 14)})
+            atr = calculate_indicator('ATR', data, timeperiod=self.get_param("atr_period", 14))
             
             # 计算 OBV
-            obv = calculate_indicator('OBV', data, {})
+            obv = calculate_indicator('OBV', data)
             
             # 计算 CCI
-            cci = calculate_indicator('CCI', data, {'timeperiod': self.get_param("cci_period", 14)})
+            cci = calculate_indicator('CCI', data, timeperiod=self.get_param("cci_period", 14))
             
-            # 计算成交量移动平均线
-            volume_ma = calculate_indicator('MA', data[['volume']], {'timeperiod': self.get_param("volume_ma")})
+            # 计算成交量移动平均线（volume 无 close 列，直接用 rolling）
+            volume_ma = data['volume'].rolling(window=self.get_param("volume_ma")).mean()
             
             # 计算波动率 (基于收盘价变化率)
             returns = data['close'].pct_change().rolling(window=self.get_param("volatility_window", 20)).std()

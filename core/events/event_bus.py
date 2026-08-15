@@ -153,6 +153,13 @@ class EventBus:
             if alert_id:
                 key_parts.append(f"alert_id:{alert_id}")
 
+            # R282: 通用去重指纹（可选）——事件定义 dedup_fingerprint 属性时参与去重键。
+            # 用于 IndicatorChangedEvent：改参后的指标事件带不同指纹，0.5s 窗口内不被
+            # 同类型事件误吞；未定义该属性的既有事件 getattr 默认 None，行为完全不变。
+            fingerprint = getattr(event, 'dedup_fingerprint', None)
+            if fingerprint:
+                key_parts.append(f"fp:{fingerprint}")
+
             return ":".join(key_parts)
 
     def _should_deduplicate(self, event_key: str) -> bool:

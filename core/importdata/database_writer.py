@@ -78,7 +78,13 @@ class DatabaseWriterThread(threading.Thread):
 
             return True
         except Exception as e:
-            logger.error(f"放入写入任务失败: {e} | 队列大小:{self.write_queue.qsize()}")
+            # R292 修复：失败日志补充写线程存活状态，便于定位"队列无人消费"
+            # （写线程已死但引擎未重建）与"队列满载"两类静默丢数据场景。
+            try:
+                writer_alive = self.is_alive()
+            except Exception:
+                writer_alive = False
+            logger.error(f"放入写入任务失败: {e} | 队列大小:{self.write_queue.qsize()} | 写入线程存活:{writer_alive}")
             return False
 
     def run(self):

@@ -144,6 +144,18 @@ class CryptoUniversalPlugin(HTTPAPIPluginTemplate):
             # 缓存配置
             'cache_enabled': True,
             'cache_ttl': 60,  # 缓存1分钟
+
+            # API端点（各交易所 REST 路径，R275 扩展：真实数据获取替代占位实现）
+            'api_endpoints': {
+                'binance_klines': '/api/v3/klines',
+                'binance_ticker': '/api/v3/ticker/price',
+                'okx_candles': '/api/v5/market/candles',
+                'okx_ticker': '/api/v5/market/ticker',
+                'huobi_kline': '/market/history/kline',
+                'huobi_ticker': '/market/detail/merged',
+                'coinbase_candles': '/products/{product_id}/candles',
+                'coinbase_ticker': '/products/{product_id}/ticker',
+            },
         }
 
         # 调用父类初始化（在UNIVERSAL_CONFIG定义之后）
@@ -283,7 +295,7 @@ class CryptoUniversalPlugin(HTTPAPIPluginTemplate):
 
         # 获取可用的交易所列表
         available_exchanges = [
-            name for name, config in self.config['exchanges'].items()
+            name for name, config in self.config.get('exchanges', {}).items()
             if config.get('enabled', False) and self._is_exchange_healthy(name)
         ]
 
@@ -411,23 +423,28 @@ class CryptoUniversalPlugin(HTTPAPIPluginTemplate):
 
             while attempts < max_attempts:
                 try:
-                    # 这里需要根据选定的交易所调用相应的API
-                    # 简化处理，返回空DataFrame
                     self.logger.info(f"从 {selected_exchange} 获取 {symbol} K线数据")
 
-                    # 实际实现时，这里应该：
-                    # 1. 根据exchange动态构建API请求
-                    # 2. 调用_request发送请求
-                    # 3. 解析返回数据
-                    # 4. 转换为标准DataFrame格式
-
-                    # 临时返回空数据框
-                    df = pd.DataFrame()
+                    # R275 扩展：真实数据获取（替代占位实现）
+                    df = self._fetch_kline_from_exchange(
+                        selected_exchange, symbol, interval,
+                        start_date, end_date, limit)
 
                     # 更新健康状态
                     self._update_exchange_health(selected_exchange, success=True)
 
-                    return df
+                    if df is not None and not df.empty:
+                        return df
+
+                    # 返回空数据也视为本次交易所不可用，尝试故障转移
+                    self.logger.warning(f"从 {selected_exchange} 获取 {symbol} K线为空")
+                    self._update_exchange_health(selected_exchange, success=False)
+                    if self.config.get('failover_enabled', True):
+                        attempts += 1
+                        selected_exchange = self._select_exchange(symbol, None)
+                        self.logger.info(f"故障转移到 {selected_exchange}，尝试 {attempts}/{max_attempts}")
+                    else:
+                        break
 
                 except Exception as e:
                     self.logger.warning(f"从 {selected_exchange} 获取数据失败: {e}")
@@ -468,18 +485,29 @@ class CryptoUniversalPlugin(HTTPAPIPluginTemplate):
 
             selected_exchange = self._select_exchange(None, exchange)
 
-            # 这里需要根据选定的交易所调用相应的API
-            # 简化处理
+            # R275 扩展：真实价格获取（替代占位实现 price=0.0）
             self.logger.info(f"从 {selected_exchange} 获取实时价格")
 
             prices_data = []
             for symbol in symbols:
-                prices_data.append({
-                    'symbol': symbol,
-                    'price': 0.0,  # 实际应该从API获取
-                    'exchange': selected_exchange,
-                    'timestamp': datetime.now()
-                })
+                try:
+                    price = self._fetch_price_from_exchange(selected_exchange, symbol)
+                    prices_data.append({
+                        'symbol': symbol,
+                        'price': price if price is not None else 0.0,
+                        'exchange': selected_exchange,
+                        'timestamp': datetime.now()
+                    })
+                except Exception as e:
+                    self.logger.warning(f"从 {selected_exchange} 获取 {symbol} 实时价格失败: {e}")
+                    prices_data.append({
+                        'symbol': symbol,
+                        'price': 0.0,
+                        'exchange': selected_exchange,
+                        'timestamp': datetime.now()
+                    })
+
+            self._update_exchange_health(selected_exchange, success=True)
 
             df = pd.DataFrame(prices_data)
             return df
@@ -487,6 +515,242 @@ class CryptoUniversalPlugin(HTTPAPIPluginTemplate):
         except Exception as e:
             self.logger.error(f"获取实时价格失败: {e}")
             return pd.DataFrame()
+
+    # ---------- R275 扩展：真实数据获取辅助方法 ----------
+
+    def _get_interval_mapping(self, exchange: str) -> Dict[str, Any]:
+        """各交易所周期映射（系统标准键 -> 交易所周期）"""
+        mappings = {
+            'binance': {
+                '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '60m': '1h',
+                '1h': '1h', '2h': '2h', '4h': '4h', '6h': '6h', '8h': '8h', '12h': '12h',
+                '1d': '1d', 'daily': '1d', 'D': '1d',
+                '1w': '1w', 'weekly': '1w', 'W': '1w',
+                '1M': '1M', 'monthly': '1M', 'M': '1M',
+                # 系统标准数字/简写键
+                '1': '1m', '5': '5m', '15': '15m', '30': '30m', '60': '1h',
+                '1H': '1h', '2H': '2h', '4H': '4h', '6H': '6h', '8H': '8h', '12H': '12h',
+            },
+            'okx': {
+                '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '60m': '1H',
+                '1h': '1H', '1H': '1H', '2H': '2H', '4H': '4H',
+                '6H': '6H', '8H': '8H', '12H': '12H',
+                'D': '1D', '1d': '1D', 'daily': '1D',
+                'W': '1W', '1w': '1W', 'weekly': '1W',
+                'M': '1M', '1M': '1M', 'monthly': '1M',
+                '1': '1m', '5': '5m', '15': '15m', '30': '30m', '60': '1H',
+            },
+            'huobi': {
+                '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '60m': '60min',
+                '1h': '60min', '1H': '60min', '2H': '2hour', '4H': '4hour',
+                '6H': '6hour', '8H': '8hour', '12H': '12hour',
+                'D': '1day', '1d': '1day', 'daily': '1day',
+                'W': '1week', '1w': '1week', 'weekly': '1week',
+                'M': '1mon', '1M': '1mon', 'monthly': '1mon',
+                '1': '1min', '5': '5min', '15': '15min', '30': '30min', '60': '60min',
+            },
+            'coinbase': {
+                '1m': 60, '5m': 300, '15m': 900, '30m': 1800, '60m': 3600,
+                '1h': 3600, '1H': 3600, '2H': 7200, '4H': 14400,
+                '6H': 21600, '8H': 28800, '12H': 43200,
+                'D': 86400, '1d': 86400, 'daily': 86400,
+                'W': 604800, '1w': 604800, 'weekly': 604800,
+                'M': 2592000, '1M': 2592000, 'monthly': 2592000,
+                '1': 60, '5': 300, '15': 900, '30': 1800, '60': 3600,
+            },
+        }
+        # 允许配置覆盖
+        configured = self.config.get('interval_mapping', {}) if hasattr(self, 'config') else {}
+        base = mappings.get(exchange, mappings['binance'])
+        if configured:
+            base = dict(base)
+            base.update(configured)
+        return base
+
+    @staticmethod
+    def _build_symbol(exchange: str, symbol: str) -> str:
+        """将通用交易对转换为各交易所符号格式"""
+        sym = symbol.upper()
+        if exchange == 'binance':
+            if '-' in sym:
+                base, quote = sym.split('-', 1)
+                sym = f"{base}{quote}"
+            # 纯 base 币（如 BTC，长度<=4）需补 USDT 报价；已含报价后缀的不追加
+            if not (len(sym) > 4 and (sym.endswith('USDT') or sym.endswith('USDC')
+                                      or sym.endswith('BTC') or sym.endswith('USD'))):
+                sym = f"{sym}USDT"
+            return sym
+        if exchange == 'okx':
+            if '-' not in sym:
+                sym = f"{sym}-USDT"
+            return sym
+        if exchange == 'huobi':
+            low = symbol.lower()
+            if not (len(low) > 4 and (low.endswith('usdt') or low.endswith('usdc'))):
+                low = f"{low}usdt"
+            return low
+        if exchange == 'coinbase':
+            if '-' not in sym:
+                sym = f"{sym}-USD"
+            return sym
+        return sym.upper()
+
+    def _session_get_json(self, url: str, params: Optional[Dict] = None) -> Any:
+        """发送 GET 请求并解析 JSON（复用模板 session）"""
+        if not self.session:
+            self.logger.error("Session未初始化")
+            return None
+        try:
+            self._rate_limit_check()
+            start_time = time.time()
+            response = self.session.get(
+                url, params=params,
+                timeout=self.config.get('timeout', 30))
+            response.raise_for_status()
+            result = response.json()
+            self._record_request(success=True, response_time=time.time() - start_time)
+            return result
+        except Exception as e:
+            self.logger.error(f"请求失败 {url}: {e}")
+            self._record_request(success=False)
+            return None
+
+    def _fetch_kline_from_exchange(
+        self, exchange: str, symbol: str, interval: str,
+        start_date: Optional[datetime], end_date: Optional[datetime],
+        limit: int
+    ) -> pd.DataFrame:
+        """从指定交易所获取 K 线并统一为 datetime 索引 DataFrame（升序）"""
+        exchange_cfg = self.config.get('exchanges', {}).get(exchange, {})
+        base_url = exchange_cfg.get('base_url')
+        if not base_url:
+            self.logger.error(f"交易所 {exchange} 未配置 base_url")
+            return pd.DataFrame()
+        endpoints = self.config.get('api_endpoints', {})
+        iv_map = self._get_interval_mapping(exchange)
+        iv = iv_map.get(interval, iv_map.get('D', iv_map.get('1d')))
+        sym = self._build_symbol(exchange, symbol)
+
+        try:
+            if exchange == 'binance':
+                params = {'symbol': sym, 'interval': iv, 'limit': min(int(limit or 500), 1000)}
+                if start_date:
+                    params['startTime'] = int(start_date.timestamp() * 1000)
+                if end_date:
+                    params['endTime'] = int(end_date.timestamp() * 1000)
+                data = self._session_get_json(f"{base_url}{endpoints['binance_klines']}", params)
+                if not data:
+                    return pd.DataFrame()
+                df = pd.DataFrame(data, columns=[
+                    'open_time', 'open', 'high', 'low', 'close', 'volume',
+                    'close_time', 'quote_volume', 'count', 'taker_buy_volume',
+                    'taker_buy_quote_volume', 'ignore'])
+                df['datetime'] = pd.to_datetime(df['open_time'].astype(int), unit='ms')
+                for col in ['open', 'high', 'low', 'close', 'volume', 'quote_volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                df = df.set_index('datetime')
+                return df[['open', 'high', 'low', 'close', 'volume']]
+
+            elif exchange == 'okx':
+                params = {'instId': sym, 'bar': iv, 'limit': min(int(limit or 500), 300)}
+                body = self._session_get_json(f"{base_url}{endpoints['okx_candles']}", params)
+                if not body or body.get('code') != '0':
+                    self.logger.warning(f"OKX 返回异常: {body}")
+                    return pd.DataFrame()
+                rows = list(body.get('data', []))
+                rows.reverse()  # OKX 倒序（最新在前）→ 转升序
+                if not rows:
+                    return pd.DataFrame()
+                df = pd.DataFrame(rows, columns=[
+                    'ts', 'open', 'high', 'low', 'close', 'volume',
+                    'volCcy', 'volCcyQuote', 'confirm'])
+                df['datetime'] = pd.to_datetime(df['ts'].astype(int), unit='ms')
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                df = df.set_index('datetime')
+                return df[['open', 'high', 'low', 'close', 'volume']]
+
+            elif exchange == 'huobi':
+                params = {'symbol': sym, 'period': iv, 'size': min(int(limit or 500), 2000)}
+                body = self._session_get_json(f"{base_url}{endpoints['huobi_kline']}", params)
+                if not body or body.get('status') != 'ok':
+                    self.logger.warning(f"Huobi 返回异常: {body}")
+                    return pd.DataFrame()
+                rows = body.get('data', [])
+                if not rows:
+                    return pd.DataFrame()
+                df = pd.DataFrame(rows)
+                df['datetime'] = pd.to_datetime(df['id'].astype(int), unit='s')
+                for col in ['open', 'high', 'low', 'close', 'amount']:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                df = df.rename(columns={'amount': 'volume'})
+                df = df.set_index('datetime')
+                return df[['open', 'high', 'low', 'close', 'volume']]
+
+            elif exchange == 'coinbase':
+                params = {'granularity': int(iv)}
+                if start_date:
+                    params['start'] = start_date.isoformat()
+                if end_date:
+                    params['end'] = end_date.isoformat()
+                endpoint = endpoints['coinbase_candles'].format(product_id=sym)
+                data = self._session_get_json(f"{base_url}{endpoint}", params)
+                if not data:
+                    return pd.DataFrame()
+                df = pd.DataFrame(data, columns=['time', 'low', 'high', 'open', 'close', 'volume'])
+                df['datetime'] = pd.to_datetime(df['time'].astype(int), unit='s')
+                for col in ['open', 'high', 'low', 'close', 'volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                df = df.set_index('datetime')
+                return df[['open', 'high', 'low', 'close', 'volume']]
+
+            else:
+                self.logger.error(f"不支持的交易所: {exchange}")
+                return pd.DataFrame()
+
+        except Exception as e:
+            self.logger.error(f"从 {exchange} 获取 {symbol} K线失败: {e}")
+            return pd.DataFrame()
+
+    def _fetch_price_from_exchange(self, exchange: str, symbol: str) -> Optional[float]:
+        """从指定交易所获取单个交易对实时价格"""
+        exchange_cfg = self.config.get('exchanges', {}).get(exchange, {})
+        base_url = exchange_cfg.get('base_url')
+        if not base_url:
+            return None
+        endpoints = self.config.get('api_endpoints', {})
+        sym = self._build_symbol(exchange, symbol)
+
+        try:
+            if exchange == 'binance':
+                body = self._session_get_json(
+                    f"{base_url}{endpoints['binance_ticker']}", {'symbol': sym})
+                return float(body['price']) if body and 'price' in body else None
+
+            elif exchange == 'okx':
+                body = self._session_get_json(
+                    f"{base_url}{endpoints['okx_ticker']}", {'instId': sym})
+                if body and body.get('code') == '0' and body.get('data'):
+                    return float(body['data'][0]['last'])
+                return None
+
+            elif exchange == 'huobi':
+                body = self._session_get_json(
+                    f"{base_url}{endpoints['huobi_ticker']}", {'symbol': sym})
+                if body and body.get('status') == 'ok' and body.get('tick'):
+                    return float(body['tick']['close'])
+                return None
+
+            elif exchange == 'coinbase':
+                endpoint = endpoints['coinbase_ticker'].format(product_id=sym)
+                body = self._session_get_json(f"{base_url}{endpoint}")
+                return float(body['price']) if body and 'price' in body else None
+
+            return None
+        except Exception as e:
+            self.logger.error(f"从 {exchange} 获取 {symbol} 价格失败: {e}")
+            return None
 
     def _update_exchange_health(self, exchange: str, success: bool):
         """更新交易所健康状态"""

@@ -133,33 +133,62 @@ class RealTimeChart(QWidget):
         self._update_charts()
 
     def _update_charts(self):
-        """更新图表显示"""
+        """更新图表显示（R267 blit：line 增量 set_data + fill_between 重建，局部重绘）"""
         if not MATPLOTLIB_AVAILABLE or not self.dates:
             return
 
-        # 清除旧图
-        self.ax1.clear()
-        self.ax2.clear()
+        # R267 blit：惰性初始化局部重绘引擎
+        if not hasattr(self, '_blit'):
+            from core.utils.mpl_blit import BlitEngine
+            self._blit = BlitEngine(self.canvas, bbox_getter=lambda: self.figure.bbox,
+                                    log_tag='[RTChart]')
+            self._line1 = None
+            self._fill2 = None
 
-        # 绘制收益曲线
-        self.ax1.plot(self.dates, [r * 100 for r in self.returns], 'b-', linewidth=1)
-        self.ax1.set_title('收益率曲线 (%)')
-        self.ax1.grid(True, alpha=0.3)
-        self.ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        # 首帧：建立静态样式 + 动态 artist 引用
+        if self._line1 is None:
+            self.ax1.clear()
+            self.ax2.clear()
+            self._line1, = self.ax1.plot(
+                self.dates, [r * 100 for r in self.returns], 'b-', linewidth=1)
+            self._fill2 = self.ax2.fill_between(
+                self.dates, [d * 100 for d in self.drawdowns], 0,
+                color='red', alpha=0.3)
+            self.ax1.set_title('收益率曲线 (%)')
+            self.ax1.grid(True, alpha=0.3)
+            self.ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            self.ax2.set_title('回撤曲线 (%)')
+            self.ax2.grid(True, alpha=0.3)
+            self.ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            plt.setp(self.ax1.xaxis.get_majorticklabels(), rotation=45)
+            plt.setp(self.ax2.xaxis.get_majorticklabels(), rotation=45)
+            self.figure.tight_layout()
+            # 首帧强制重建背景
+            self._blit.invalidate()
+            self._blit.render([self._line1, self._fill2])
+            return
 
-        # 绘制回撤曲线
-        self.ax2.fill_between(self.dates, [d * 100 for d in self.drawdowns], 0,
-                              color='red', alpha=0.3)
-        self.ax2.set_title('回撤曲线 (%)')
-        self.ax2.grid(True, alpha=0.3)
-        self.ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        # 增量更新：收益线 set_data，回撤区重建（fill_between 顶点更新复杂，重建更稳）
+        old_xlim1 = self.ax1.get_xlim()
+        old_ylim1 = self.ax1.get_ylim()
+        old_xlim2 = self.ax2.get_xlim()
+        old_ylim2 = self.ax2.get_ylim()
 
-        # 旋转x轴标签
-        plt.setp(self.ax1.xaxis.get_majorticklabels(), rotation=45)
-        plt.setp(self.ax2.xaxis.get_majorticklabels(), rotation=45)
+        self._line1.set_data(self.dates, [r * 100 for r in self.returns])
+        self._fill2.remove()
+        self._fill2 = self.ax2.fill_between(
+            self.dates, [d * 100 for d in self.drawdowns], 0,
+            color='red', alpha=0.3)
 
-        self.figure.tight_layout()
-        self.canvas.draw()
+        # 数据范围变化（滑动窗口推进/数值变化）时重建背景，否则 blit
+        self.ax1.relim()
+        self.ax1.autoscale_view()
+        self.ax2.relim()
+        self.ax2.autoscale_view()
+        if (old_xlim1 != self.ax1.get_xlim() or old_ylim1 != self.ax1.get_ylim()
+                or old_xlim2 != self.ax2.get_xlim() or old_ylim2 != self.ax2.get_ylim()):
+            self._blit.invalidate()
+        self._blit.render([self._line1, self._fill2])
 
 class SignalMonitorWidget(QWidget):
     """信号监控组件"""

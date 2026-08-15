@@ -16,7 +16,8 @@ R252 回归测试: 交易域修复 F1-F7
 - 弹出 conftest 冲突 mock 条目, 用 importlib 从文件加载被测试模块
 - right_panel 用假 BasePanel 避免 PyQt5 sip 组合元类无头崩溃
 - order_executor 依赖的重型链 (order_repository / enhanced_risk_monitor / account_manager) 以 mock 模块隔离
-- 本文件末尾恢复被 mock 污染的 sys.modules 条目, 避免污染其他测试文件
+- R272 治理: 模块级覆盖 sys.modules 前保存原真实模块引用, 文件末尾恢复真实模块
+  (而非 pop 移除), 消除后续文件类身份漂移
 """
 import os
 import sys
@@ -46,11 +47,24 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+# ---------------------------------------------------------------------------
+# R272 治理: sys.modules 覆盖前保存原真实模块引用, 末尾恢复真实模块
+# ---------------------------------------------------------------------------
+_ORIGINAL_MODULES: dict = {}
+
+
+def _install(name, mod):
+    """R272 治理: 覆盖 sys.modules 前保存原真实模块引用 (存在才保存)"""
+    if name in sys.modules and name not in _ORIGINAL_MODULES:
+        _ORIGINAL_MODULES[name] = sys.modules[name]
+    sys.modules[name] = mod
+
+
 def _make_mock_module(name: str) -> MagicMock:
     _m = MagicMock()
     _m.__name__ = name
     _m.__file__ = f'<mock:{name}>'
-    sys.modules[name] = _m
+    _install(name, _m)
     return _m
 
 
@@ -60,7 +74,7 @@ def _load_module_from_file(module_name: str, rel_path: str):
     spec = importlib.util.spec_from_file_location(
         module_name, os.path.join(ROOT, rel_path))
     module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
+    _install(module_name, module)
     spec.loader.exec_module(module)
     return module
 
@@ -87,7 +101,7 @@ TradingPanel = _tp_module.TradingPanel
 _analysis_tabs_mod = types.ModuleType('gui.widgets.analysis_tabs')
 _analysis_tabs_mod.__path__ = [
     os.path.join(os.path.dirname(gui.widgets.__file__), 'analysis_tabs')]
-sys.modules['gui.widgets.analysis_tabs'] = _analysis_tabs_mod
+_install('gui.widgets.analysis_tabs', _analysis_tabs_mod)
 
 for _sub in ('pattern_tab', 'pattern_tab_pro', 'technical_tab', 'trend_tab',
              'wave_tab', 'sector_flow_tab', 'sector_flow_tab_pro', 'hotspot_tab'):
@@ -116,11 +130,11 @@ class _FakeBasePanel:
 
 _panels_pkg = types.ModuleType('core.ui.panels')
 _panels_pkg.__path__ = [os.path.join(ROOT, 'core', 'ui', 'panels')]
-sys.modules['core.ui.panels'] = _panels_pkg
+_install('core.ui.panels', _panels_pkg)
 
 _base_panel_mod = types.ModuleType('core.ui.panels.base_panel')
 _base_panel_mod.BasePanel = _FakeBasePanel
-sys.modules['core.ui.panels.base_panel'] = _base_panel_mod
+_install('core.ui.panels.base_panel', _base_panel_mod)
 
 _rp_module = _load_module_from_file(
     'core.ui.panels.right_panel', 'core/ui/panels/right_panel.py')
@@ -164,9 +178,9 @@ _RUNTIME_MOCK_MODULES = [
 
 @pytest.fixture(autouse=True)
 def _r252_ensure_runtime_mocks():
-    """收集阶段的文件末尾 pop 会移除 core.trading.* mock (避免污染其他测试文件),
-    但 _pre_trade_risk_check 运行时延迟 import 仍需要它们 →
-    每个测试前重新注入 mock, 测试后 pop 恢复"""
+    """收集阶段的文件末尾恢复会放回真实模块 (避免污染其他测试文件),
+    但 _pre_trade_risk_check 运行时延迟 import 仍需要 mock →
+    每个测试前重新注入 mock, 测试后恢复真实模块 (R272 语义)"""
     global _ERM, _AM
     for _name in _RUNTIME_MOCK_MODULES:
         _make_mock_module(_name)
@@ -174,7 +188,10 @@ def _r252_ensure_runtime_mocks():
     _AM = sys.modules['core.trading.account_manager'].AccountManager
     yield
     for _name in _RUNTIME_MOCK_MODULES:
-        sys.modules.pop(_name, None)
+        if _name in _ORIGINAL_MODULES:
+            sys.modules[_name] = _ORIGINAL_MODULES[_name]
+        else:
+            sys.modules.pop(_name, None)
 
 
 _FULL_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
@@ -535,9 +552,11 @@ class TestF7SignalPanelRealData(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 恢复被本文件 mock 污染的 sys.modules 条目 (R251 交叉审查教训)
+# R272 治理: 恢复真实模块 (而非 pop 移除) — 消除后续文件类身份漂移
+# 本文件注入/加载过的全部模块名 (mock + 内联包 + _load_module_from_file 副本)
 # ---------------------------------------------------------------------------
-_POLLUTED_MODULES = [
+_ALL_INJECTED_NAMES = (
+    'gui.widgets.analysis_tabs',
     'gui.widgets.analysis_tabs.pattern_tab',
     'gui.widgets.analysis_tabs.pattern_tab_pro',
     'gui.widgets.analysis_tabs.technical_tab',
@@ -556,9 +575,16 @@ _POLLUTED_MODULES = [
     'core.risk_monitoring.enhanced_risk_monitor',
     'core.trading.account_manager',
     'core.trading.order_executor',
-]
-for _mod_name in _POLLUTED_MODULES:
-    sys.modules.pop(_mod_name, None)
+    'core.ui.panels',
+    'core.ui.panels.base_panel',
+    'core.ui.panels.right_panel',
+    'gui.widgets.trading_panel',
+)
+for _name, _orig in _ORIGINAL_MODULES.items():
+    sys.modules[_name] = _orig
+for _name in _ALL_INJECTED_NAMES:
+    if _name not in _ORIGINAL_MODULES:
+        sys.modules.pop(_name, None)
 
 
 if __name__ == '__main__':

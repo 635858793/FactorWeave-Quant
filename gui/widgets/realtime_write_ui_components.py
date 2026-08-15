@@ -1008,14 +1008,14 @@ class RealtimeWriteMonitoringWidget(QWidget):
             if success:
                 logger.info(f"数据库连接池大小已更新为: {new_pool_size}")
 
-                # 显示提示
+                # 显示提示 (HVD-E: update_pool_size 已改为运行时重建全部连接池,
+                # 不再需要重启生效; 重建为 EAGER 建池, 界面可能短暂无响应)
                 from PyQt5.QtWidgets import QMessageBox
                 QMessageBox.information(
                     None,
                     "配置已更新",
                     f"数据库连接池大小已设置为: {new_pool_size}\n\n"
-                    f"注意：此配置将在下次创建新连接池时生效。\n"
-                    f"如需立即生效，请重启应用程序。"
+                    f"已立即生效（重建连接池期间界面可能短暂无响应）。"
                 )
             else:
                 from PyQt5.QtWidgets import QMessageBox

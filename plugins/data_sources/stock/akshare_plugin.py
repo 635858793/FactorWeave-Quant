@@ -28,6 +28,7 @@ from core.data_source_extensions import IDataSourcePlugin, PluginInfo, HealthChe
 from core.plugin_types import PluginType, AssetType, DataType
 from plugins.plugin_interface import PluginLifecycle
 from plugins.data_sources.utils.retry_helper import retry_on_connection_error, log_execution_time
+from plugins.templates.standard_data_source_plugin import PluginConnectionError
 from loguru import logger
 
 # 检查akshare库
@@ -375,6 +376,11 @@ class AKSharePlugin(IDataSourcePlugin):
             self.logger.error(f"获取AKShare板块资金流数据失败: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
+            # R286: 连接类故障（RemoteDisconnected/超时等确定性故障）必须向上传播，
+            # 否则被吞成"空数据"后 TET failover 只能按统计型失败累积 3 次才熔断；
+            # 传播后 pipeline 依据"数据源连接失败"关键字即时 mark_unavailable。
+            if isinstance(e, (ConnectionError, TimeoutError, OSError)):
+                raise PluginConnectionError(f"数据源连接失败: {e}") from e
             return pd.DataFrame()
 
     def _safe_float(self, value) -> float:

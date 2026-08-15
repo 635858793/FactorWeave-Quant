@@ -15,6 +15,8 @@ import threading
 # 替换旧的指标系统导入
 from core.indicator_adapter import get_indicator_english_name
 from utils.theme import parse_color_for_matplotlib
+# R292 涨跌停精确判定（按板块计算涨/跌停价，替代固定 4.8% 阈值）
+from core.rendering.limit_price import classify_limit_up_down, extract_symbol
 
 
 class IndicatorPerformanceOptimizer:
@@ -181,8 +183,33 @@ class RenderingMixin:
                     self.show_no_data(f"K线数据缺少必要列: {', '.join(missing_columns)}")
                     return
 
+            # R267: 降采样前保存完整原始数据，防止 current_kdata 被降采样结果覆盖导致数据永久丢失
+            # （数据>1200条时，指标切换若基于已降采样的 current_kdata 重渲染，原始数据无法恢复）
+            self._full_kdata = kdata
+
+            # R292-HV 修正：涨跌停四色判定必须在降采样前用全量数据执行。
+            # 降采样后相邻 K 线并非真实相邻交易日，"昨收"错位 → 涨停/跌停价计算错误
+            # → 四色漏判。方案：全量计算 limit 掩码 → 附加为 limit_up/limit_down 布尔列
+            # → 随降采样 iloc 切片保留 → 渲染路径优先读取该列（列缺失时回退内部重判，
+            # 兼容直接传数据、未带 limit 列的调用方）。
+            if isinstance(kdata, pd.DataFrame) and not kdata.empty:
+                try:
+                    if ('limit_up' not in kdata.columns
+                            or 'limit_down' not in kdata.columns):
+                        lu, ld = classify_limit_up_down(
+                            kdata['close'].to_numpy(dtype=float),
+                            kdata['high'].to_numpy(dtype=float),
+                            kdata['low'].to_numpy(dtype=float),
+                            extract_symbol(kdata))
+                        kdata['limit_up'] = lu
+                        kdata['limit_down'] = ld
+                except Exception as e:
+                    logger.debug(f"涨跌停掩码计算失败，回退渲染层重判: {e}")
+
             kdata = self._downsample_kdata(kdata)
-            kdata = kdata.dropna(how='any')
+            # R290 防御：dropna 仅对 K 线必要列过滤，避免 adj_type/adj_source 等
+            # 辅助列为 NaN 时 how='any' 把全部行删除导致图表空白。
+            kdata = kdata.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
             kdata = kdata.loc[~kdata.index.duplicated(keep='first')]
 
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
@@ -204,6 +231,8 @@ class RenderingMixin:
                 logger.warning("kdata为空，设置默认Y轴范围")
 
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
+                if ax is None:
+                    continue
                 for artist in ax.lines + ax.collections + ax.texts:
                     artist.remove()
 
@@ -220,29 +249,68 @@ class RenderingMixin:
 
             start_time = time.time()
 
+            # R277 修复：图表类型（K线图/分时图/美国线/收盘价）真实生效。
+            # 原实现无条件渲染K线图（render_candlesticks），chart_type 在链路中被丢弃。
+            chart_type = data.get('chart_type') or getattr(self, 'chart_type', None) or 'K线图'
+            logger.info(f"渲染图表类型: {chart_type}, 数据条数: {len(kdata)}")
+
             # 记录渲染参数
-            logger.debug(f"准备调用renderer.render_candlesticks，x轴长度: {len(x)}")
+            logger.debug(f"准备调用渲染器，x轴长度: {len(x)}")
 
             # 性能优化：延迟绘制 - 先完成所有渲染，最后统一绘制
             # 调用渲染器
-            try:
-                self.renderer.render_candlesticks(self.price_ax, kdata, style, x=x)
-                logger.debug("K线渲染成功")
-            except Exception as e:
-                logger.error(f"K线渲染失败: {e}", exc_info=True)
-                raise
+            if chart_type == '美国线':
+                try:
+                    self._render_ohlc_bars(self.price_ax, kdata, style, x)
+                    logger.debug("美国线渲染成功")
+                except Exception as e:
+                    logger.error(f"美国线渲染失败: {e}", exc_info=True)
+                try:
+                    self.renderer.render_volume(self.volume_ax, kdata, style, x=x)
+                    logger.debug("成交量渲染成功")
+                except Exception as e:
+                    logger.error(f"成交量渲染失败: {e}", exc_info=True)
+            elif chart_type == '收盘价':
+                try:
+                    self.renderer.render_line(self.price_ax, kdata['close'], style, x=x)
+                    logger.debug("收盘价线渲染成功")
+                except Exception as e:
+                    logger.error(f"收盘价线渲染失败: {e}", exc_info=True)
+            elif chart_type == '分时图':
+                # 分时图：收盘价折线 + 成交量（简化实现，数据为所选周期K线）
+                # R279 说明：当前"分时图"渲染的是所选周期（默认1分钟）的历史K线折线，
+                # 并非实时行情推送。明确标注数据性质，避免用户误认为实时分时。
+                try:
+                    self.renderer.render_line(self.price_ax, kdata['close'], style, x=x)
+                    logger.debug("分时图渲染成功")
+                except Exception as e:
+                    logger.error(f"分时图渲染失败: {e}", exc_info=True)
+                try:
+                    self.renderer.render_volume(self.volume_ax, kdata, style, x=x)
+                    logger.debug("成交量渲染成功")
+                except Exception as e:
+                    logger.error(f"成交量渲染失败: {e}", exc_info=True)
+                try:
+                    self.price_ax.text(
+                        0.99, 0.99, '历史K线 · 非实时行情',
+                        transform=self.price_ax.transAxes, ha='right', va='top',
+                        fontsize=9, color='#888888', alpha=0.85, zorder=200)
+                except Exception as e:
+                    logger.debug(f"分时图数据来源标注失败: {e}")
+            else:  # K线图（默认）
+                try:
+                    self.renderer.render_candlesticks(self.price_ax, kdata, style, x=x)
+                    logger.debug("K线渲染成功")
+                except Exception as e:
+                    logger.error(f"K线渲染失败: {e}", exc_info=True)
+                    raise
+                try:
+                    self.renderer.render_volume(self.volume_ax, kdata, style, x=x)
+                    logger.debug("成交量渲染成功")
+                except Exception as e:
+                    logger.error(f"成交量渲染失败: {e}", exc_info=True)
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"render_candlesticks，耗时: {render_time:.2f}ms")
-
-            start_time = time.time()
-            try:
-                self.renderer.render_volume(self.volume_ax, kdata, style, x=x)
-                logger.debug("成交量渲染成功")
-            except Exception as e:
-                logger.error(f"成交量渲染失败: {e}", exc_info=True)
-
-            render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"render_volume，耗时: {render_time:.2f}ms")
+            logger.info(f"图表类型[{chart_type}]渲染，耗时: {render_time:.2f}ms")
 
             start_time = time.time()
 
@@ -257,15 +325,13 @@ class RenderingMixin:
             except Exception as e:
                 logger.warning(f"autoscale_view()调用失败: {e}")
 
-            # 处理indicators_data（如果存在）
+            # indicators_data（分析链预计算结果）不在此渲染：真实渲染由
+            # _render_indicators 按 active_indicators 实时重算完成。R290 已清理
+            # _render_indicator_data 死代码（其仅处理大写 MA/MACD 键，与实际生产
+            # 数据的小写 ma5/rsi/macd/boll 格式不匹配，0 渲染输出）。
             indicators_data = data.get('indicators_data', {})
             if indicators_data:
-                # 将indicators_data传递给渲染函数
-                logger.info(f"检测到indicators_data，指标数量: {len(indicators_data)}, 指标名称: {list(indicators_data.keys())}")
-                self._render_indicator_data(indicators_data, kdata, x)
-                logger.info(f"_render_indicator_data调用完成")
-            else:
-                logger.debug(f"💡 indicators_data为空，builtin指标将在_render_indicators中计算")
+                logger.debug(f"检测到indicators_data，指标数量: {len(indicators_data)}，由_render_indicators按active_indicators渲染")
 
             start_time = time.time()
             # 🔧 修复：只在active_indicators为None时使用默认指标，保护用户的选择
@@ -323,10 +389,21 @@ class RenderingMixin:
 
             self._render_indicators(kdata, x=x)
 
-            # --- 新增：形态信号可视化 ---
+            # --- 形态信号可视化（R279：update_chart 清场后恢复形态标识）---
             pattern_signals = data.get('pattern_signals', None)
+            if not pattern_signals:
+                # plot_patterns 路径：读取上次绘制的形态状态（周期切换/指标变更/缩放重绘后恢复）
+                pattern_signals = getattr(self, '_current_pattern_signals', None)
             if pattern_signals:
                 self.plot_patterns(pattern_signals)
+            else:
+                # 右侧形态tab路径（signal_mixin）：重绘右侧选中的形态信号
+                last_display = getattr(self, '_last_pattern_display', None)
+                if last_display:
+                    try:
+                        self.draw_pattern_signals(**last_display)
+                    except Exception as e:
+                        logger.debug(f"重绘右侧形态信号失败: {e}")
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
             logger.info(f"_render_indicators，耗时: {render_time:.2f}ms")
 
@@ -339,7 +416,10 @@ class RenderingMixin:
             logger.info(f"形态信号可视化，耗时: {render_time:.2f}ms")
 
             if not kdata.empty:
-                for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
+                for ax in [self.price_ax, self.volume_ax, self.indicator_ax,
+                           getattr(self, 'indicator_ax2', None)]:
+                    if ax is None:
+                        continue
                     ax.set_xlim(0, len(kdata)-1)
                 self.price_ax.set_ylim(self._ymin, self._ymax)
                 # 设置X轴刻度和标签（间隔显示，防止过密）
@@ -347,19 +427,22 @@ class RenderingMixin:
                 xticks = np.arange(0, len(kdata), step)
                 xticklabels = [self._safe_format_date(
                     kdata.iloc[i], i, kdata) for i in xticks]
-                self.indicator_ax.set_xticks(xticks)
+                x_ax = self.indicator_ax
+                x_ax.set_xticks(xticks)
                 # 修复：确保tick数量和label数量一致
                 if len(xticks) == len(xticklabels):
-                    self.indicator_ax.set_xticklabels(
+                    x_ax.set_xticklabels(
                         xticklabels, rotation=30, fontsize=8)
                 else:
                     # 自动补齐或截断
                     min_len = min(len(xticks), len(xticklabels))
-                    self.indicator_ax.set_xticks(xticks[:min_len])
-                    self.indicator_ax.set_xticklabels(
+                    x_ax.set_xticks(xticks[:min_len])
+                    x_ax.set_xticklabels(
                         xticklabels[:min_len], rotation=30, fontsize=8)
             self.close_loading_dialog()
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
+                if ax is None:
+                    continue
                 ax.yaxis.set_tick_params(direction='in', pad=0)
                 ax.yaxis.set_label_position('left')
                 ax.tick_params(axis='y', direction='in', pad=0)
@@ -374,6 +457,17 @@ class RenderingMixin:
             if hasattr(self, 'canvas') and self.canvas:
                 self.canvas.draw_idle()
                 logger.debug("统一绘制完成（延迟绘制优化）")
+
+            # R265: 全量重绘完成后，十字光标blit背景失效需重建（避免恢复错位画面）
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
+
+            # R283: 渲染完成后重定位第二指标区"指标▼"按钮（轴布局/尺寸可能已变化）
+            if hasattr(self, '_sync_region_indicator_btn_pos'):
+                try:
+                    self._sync_region_indicator_btn_pos()
+                except Exception:
+                    pass
 
             # 性能优化P3：进一步延迟十字光标初始化到用户交互时
             # 不在渲染完成后立即初始化，而是在用户首次鼠标移动时再初始化
@@ -429,6 +523,8 @@ class RenderingMixin:
             # 不再在这里触发绘制，避免在渲染过程中触发额外绘制
             # self.canvas.draw_idle()  # 已移除，在最后统一绘制
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
+                if ax is None:
+                    continue
                 for label in (ax.get_xticklabels() + ax.get_yticklabels()):
                     label.set_fontsize(8)
                 ax.title.set_fontsize(8)
@@ -468,118 +564,6 @@ class RenderingMixin:
             logger.error(f"错误详情: {type(e).__name__}: {str(e)}")
             self.show_no_data("渲染失败")
 
-    def _render_indicator_data(self, indicators_data, kdata, x=None):
-        """渲染从indicators_data传递的指标数据"""
-        try:
-            logger.info(f"_render_indicator_data开始执行")
-            if not indicators_data:
-                logger.warning(f"❌ indicators_data为空，直接返回")
-                return
-
-            if x is None:
-                x = np.arange(len(kdata))
-
-            logger.info(f"准备遍历indicators_data，指标数量: {len(indicators_data)}")
-            # 遍历所有指标
-            for i, (indicator_name, indicator_data) in enumerate(indicators_data.items()):
-                logger.info(f"处理指标 {i+1}/{len(indicators_data)}: {indicator_name}, 数据类型: {type(indicator_data)}")
-                # 处理MA指标
-                if indicator_name == 'MA':
-                    for j, (period, values) in enumerate(indicator_data.items()):
-                        # 确保values是列表
-                        values_list = values
-                        if hasattr(values, 'tolist'):
-                            values_list = values.tolist()
-
-                        # 处理值为None的情况
-                        valid_values = []
-                        valid_x = []
-                        for idx, val in enumerate(values_list):
-                            if val is not None and not (isinstance(val, float) and np.isnan(val)):
-                                valid_values.append(val)
-                                valid_x.append(x[idx] if idx < len(x) else idx)
-
-                        if valid_values:
-                            style = self._get_indicator_style(f'MA{period}', j)
-                            self.price_ax.plot(
-                                valid_x,
-                                valid_values,
-                                color=style['color'],
-                                linewidth=style['linewidth'],
-                                alpha=style['alpha'],
-                                label=f'MA{period}'
-                            )
-
-                # 处理MACD指标
-                elif indicator_name == 'MACD':
-                    # MACD通常有DIF、DEA和MACD三个数据序列
-                    dif_values = indicator_data.get('DIF', [])
-                    dea_values = indicator_data.get('DEA', [])
-                    hist_values = indicator_data.get('MACD', [])
-
-                    # 确保是列表
-                    if hasattr(dif_values, 'tolist'):
-                        dif_values = dif_values.tolist()
-                    if hasattr(dea_values, 'tolist'):
-                        dea_values = dea_values.tolist()
-                    if hasattr(hist_values, 'tolist'):
-                        hist_values = hist_values.tolist()
-
-                    # 绘制DIF和DEA线
-                    valid_dif = [(idx, val) for idx, val in enumerate(dif_values)
-                                 if val is not None and not (isinstance(val, float) and np.isnan(val))]
-                    valid_dea = [(idx, val) for idx, val in enumerate(dea_values)
-                                 if val is not None and not (isinstance(val, float) and np.isnan(val))]
-
-                    if valid_dif:
-                        valid_x_dif, valid_y_dif = zip(*valid_dif)
-                        self.indicator_ax.plot(
-                            [x[i] for i in valid_x_dif if i < len(x)],
-                            valid_y_dif,
-                            color='#1976d2',  # 蓝色
-                            linewidth=0.7,
-                            alpha=0.85,
-                            label='DIF'
-                        )
-
-                    if valid_dea:
-                        valid_x_dea, valid_y_dea = zip(*valid_dea)
-                        self.indicator_ax.plot(
-                            [x[i] for i in valid_x_dea if i < len(x)],
-                            valid_y_dea,
-                            color='#ff9800',  # 橙色
-                            linewidth=0.7,
-                            alpha=0.85,
-                            label='DEA'
-                        )
-
-                    # 绘制MACD柱状图
-                    valid_hist = [(idx, val) for idx, val in enumerate(hist_values)
-                                  if val is not None and not (isinstance(val, float) and np.isnan(val))]
-
-                    if valid_hist:
-                        valid_x_hist, valid_y_hist = zip(*valid_hist)
-                        valid_x_hist = [x[i]
-                                        for i in valid_x_hist if i < len(x)]
-                        colors = ['#e53935' if h >=
-                                  0 else '#43a047' for h in valid_y_hist]  # 红色和绿色
-                        self.indicator_ax.bar(
-                            valid_x_hist,
-                            valid_y_hist,
-                            color=colors,
-                            alpha=0.5,
-                            width=0.6
-                        )
-
-                # 其他指标类型...可以根据需要添加更多指标的处理逻辑
-
-        except Exception as e:
-            if hasattr(self, 'error_occurred'):
-                self.error_occurred.emit(f"渲染指标数据失败: {str(e)}")
-            logger.error(f"渲染指标数据失败: {str(e)}")
-
-    
-    
     def clear_performance_cache(self):
         """清除性能优化缓存"""
         self._performance_optimizer.clear_cache()
@@ -610,6 +594,8 @@ class RenderingMixin:
             return {
                 'up_color': processed_colors.get('k_up', '#e74c3c'),
                 'down_color': processed_colors.get('k_down', '#27ae60'),
+                'limit_up_color': processed_colors.get('k_limit_up', '#FF9800'),
+                'limit_down_color': processed_colors.get('k_limit_down', '#AB47BC'),
                 'edge_color': processed_colors.get('k_edge', '#2c3140'),
                 'volume_up_color': processed_colors.get('volume_up', '#e74c3c'),
                 'volume_down_color': processed_colors.get('volume_down', '#27ae60'),
@@ -625,6 +611,50 @@ class RenderingMixin:
         except Exception as e:
             logger.error(f"获取图表样式失败: {str(e)}")
             return {}
+
+    def _render_ohlc_bars(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None,
+                          x: np.ndarray = None) -> None:
+        """R277: 美国线（OHLC Bar）渲染
+
+        标准美国线画法：竖线连接最高/最低价，左侧横线为开盘价，右侧横线为收盘价，
+        涨红跌绿（与K线图一致）。数据量已由 _downsample_kdata 控制（≤1200 条）。
+        R292-HV 修正：与 K 线四色规则一致（涨红/跌绿/涨停橙/跌停紫）。美国线不使用
+        阳线空心语义，直接按四色分组着色。'limit_up'/'limit_down' 列存在时优先读取
+        （上游在降采样前按全量数据计算，保证昨收为真实前一交易日），缺失时回退内部
+        按板块判定，兼容直接传数据的调用方。
+        """
+        try:
+            up_color = (style or {}).get('up_color', '#e74c3c')
+            down_color = (style or {}).get('down_color', '#27ae60')
+            limit_up_color = (style or {}).get('limit_up_color', '#FF9800')
+            limit_down_color = (style or {}).get('limit_down_color', '#AB47BC')
+            if x is None:
+                x = np.arange(len(data))
+            x = np.asarray(x, dtype=float)
+
+            open_p = data['open'].to_numpy(dtype=float)
+            high_p = data['high'].to_numpy(dtype=float)
+            low_p = data['low'].to_numpy(dtype=float)
+            close_p = data['close'].to_numpy(dtype=float)
+            # R292-HV：四色分类（列优先；无 limit 列时回退内部按板块判定）
+            if 'limit_up' in data.columns and 'limit_down' in data.columns:
+                is_limit_up = data['limit_up'].to_numpy(dtype=bool)
+                is_limit_down = data['limit_down'].to_numpy(dtype=bool)
+            else:
+                is_limit_up, is_limit_down = classify_limit_up_down(
+                    close_p, high_p, low_p, extract_symbol(data))
+            colors = np.where(
+                is_limit_up, limit_up_color,
+                np.where(is_limit_down, limit_down_color,
+                         np.where(close_p >= open_p, up_color, down_color)))
+
+            bar_width = 0.4 if len(x) > 1 else 0.5
+            for xi, o, h, l, c, col in zip(x, open_p, high_p, low_p, close_p, colors):
+                ax.vlines(xi, l, h, colors=col, linewidth=1)
+                ax.hlines(o, xi - bar_width, xi, colors=col, linewidth=1)
+                ax.hlines(c, xi, xi + bar_width, colors=col, linewidth=1)
+        except Exception as e:
+            logger.error(f"美国线(OHLC)渲染失败: {e}", exc_info=True)
 
     def _get_indicator_style(self, name: str, index: int = 0) -> Dict[str, Any]:
         """获取指标样式，颜色从theme_manager.get_theme_colors获取"""
@@ -688,12 +718,15 @@ class RenderingMixin:
     def clear_chart(self):
         """清空图表"""
         try:
-            # 清空所有子图
+            # 清空所有子图（R283: 补 indicator_ax2，此前遗漏导致切换指标后旧图残留）
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
+                if ax is None:
+                    continue
                 ax.cla()
 
             # 重置数据
             self.current_kdata = None
+            self._full_kdata = None  # R267: 完整数据源一并清空，防止残留脏数据
             self._ymin = 0
             self._ymax = 1
 
@@ -758,6 +791,8 @@ class RenderingMixin:
             self.figure.patch.set_facecolor(bg_color)
 
             for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
+                if ax is None:
+                    continue
                 ax.set_facecolor(bg_color)
 
                 grid_color = processed_colors.get('chart_grid', '#e0e0e0')
@@ -879,9 +914,9 @@ class RenderingMixin:
             if hasattr(self, 'period_changed'):
                 self.period_changed.emit(period)
 
-            # 刷新图表
+            # 刷新图表（R267: 使用完整数据源，避免基于已降采样的current_kdata丢失原始数据）
             if hasattr(self, 'current_kdata') and self.current_kdata is not None:
-                self.update_chart({'kdata': self.current_kdata})
+                self.update_chart({'kdata': self._get_render_kdata() if hasattr(self, '_get_render_kdata') else self.current_kdata})
 
         except Exception as e:
             logger.error(f"处理周期变更失败: {str(e)}")
@@ -893,9 +928,9 @@ class RenderingMixin:
             if hasattr(self, 'indicator_changed'):
                 self.indicator_changed.emit(indicator)
 
-            # 刷新图表
+            # 刷新图表（R267: 使用完整数据源，避免基于已降采样的current_kdata丢失原始数据）
             if hasattr(self, 'current_kdata') and self.current_kdata is not None:
-                self.update_chart({'kdata': self.current_kdata})
+                self.update_chart({'kdata': self._get_render_kdata() if hasattr(self, '_get_render_kdata') else self.current_kdata})
 
         except Exception as e:
             logger.error(f"处理指标变更失败: {str(e)}")

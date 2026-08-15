@@ -278,8 +278,8 @@ class ProfessionalStockAnalyzer:
             elif data.index.name == 'datetime':
                 data = data.sort_index()
 
-            # 计算基础技术指标
-            data = calculate_indicator(data, 'all')
+            # 计算基础技术指标（原代码 calculate_indicator(data, 'all') 参数颠倒且 'all' 不是合法指标名，必崩）
+            data = calculate_indicator('MA', data, timeperiod=20)
 
             # 计算收益率
             data['returns'] = data['close'].pct_change()

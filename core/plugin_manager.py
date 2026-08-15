@@ -450,11 +450,20 @@ class PluginManager:
         data_source_keywords = [
             'akshare', 'wind', 'tushare', 'yahoo', 'bond', 'forex',
             'mysteel', 'wenhua', 'tongdaxin', 'custom_data', 'factorweave_data',
-            'eastmoney', 'sina'  # 添加eastmoney和sina关键字
+            'eastmoney', 'sina',  # 添加eastmoney和sina关键字
+            # R275 补齐缺失关键词：baostock/miniqmt/level2/crypto系 此前只能创建
+            # 虚拟实例（PluginInfo 被当实例塞入 plugin_instances），PluginCenter
+            # 判定非数据源插件 → 不入注册表 → TET 路由缺失该数据源 → 业务断链
+            'baostock', 'miniqmt', 'level2', 'crypto', 'binance', 'okx',
+            'coinbase', 'huobi', 'universal',
         ]
         indicator_keywords = ['talib', 'indicator', 'indicators']
 
         plugin_name_lower = plugin_name.lower()
+        # R275 兜底：load_all_plugins 命名约定为 data_sources.{category}.{stem}，
+        # 凡属该命名空间的一律按真实插件加载，避免后续新增分类再次漏配关键词
+        if plugin_name_lower.startswith('data_sources.'):
+            return True
         return any(keyword in plugin_name_lower for keyword in data_source_keywords) or any(keyword in plugin_name_lower for keyword in indicator_keywords)
 
     def _load_real_plugin_instance(self, plugin_name: str):
@@ -1659,7 +1668,9 @@ class PluginManager:
         try:
             # 检查插件是否已加载
             if plugin_name in self.loaded_plugins:
-                logger.warning(f"插件已加载: {plugin_name}")
+                # R292 修复: 幂等重复加载分支为正常路径, 原 WARNING 级别误用
+                # (与 L1990 成功日志 info 约定不一致, 且启动时刷屏掩盖真实告警)
+                logger.info(f"插件已加载: {plugin_name}")
                 return True
 
             # 加载插件模块
@@ -2114,7 +2125,7 @@ class PluginManager:
                 attr = getattr(module, attr_name)
                 if (isinstance(attr, type) and
                     hasattr(attr, '_plugin_metadata') and
-                        attr.__name__ not in excluded_class_names):
+                        attr.__name__ not in excluded_class_names and not attr.__name__.endswith('Config')):
                     logger.info(f"找到带有_plugin_metadata属性的插件类: {attr.__name__}")
                     return attr
 
@@ -2123,7 +2134,7 @@ class PluginManager:
                 attr = getattr(module, attr_name)
                 if (isinstance(attr, type) and
                     hasattr(attr, '_strategy_name') and
-                        attr.__name__ not in excluded_class_names):
+                        attr.__name__ not in excluded_class_names and not attr.__name__.endswith('Config')):
                     logger.info(f"找到策略类: {attr.__name__} (策略名: {attr._strategy_name})")
                     return attr
 
@@ -2132,7 +2143,7 @@ class PluginManager:
                 attr = getattr(module, attr_name)
                 if (isinstance(attr, type) and
                     hasattr(attr, '__bases__') and
-                        attr.__name__ not in excluded_class_names):
+                        attr.__name__ not in excluded_class_names and not attr.__name__.endswith('Config')):
                     # 检查基类名称
                     for base in attr.__bases__:
                         if base.__name__ == 'BaseStrategy':
@@ -2144,7 +2155,7 @@ class PluginManager:
                 attr = getattr(module, attr_name)
                 if (isinstance(attr, type) and
                     hasattr(attr, '__bases__') and
-                        attr.__name__ not in excluded_class_names):
+                        attr.__name__ not in excluded_class_names and not attr.__name__.endswith('Config')):
                     # 检查基类名称
                     for base in attr.__bases__:
                         if base.__name__ == 'IPlugin' or 'Plugin' in base.__name__:
@@ -2163,7 +2174,7 @@ class PluginManager:
                 attr = getattr(module, attr_name)
                 if (isinstance(attr, type) and
                     'Plugin' in attr.__name__ and
-                        attr.__name__ not in excluded_class_names):
+                        attr.__name__ not in excluded_class_names and not attr.__name__.endswith('Config')):
                     # 检查是否是枚举类型
                     if hasattr(attr, '__members__'):
                         # logger.info(f"跳过枚举类型: {attr.__name__}")

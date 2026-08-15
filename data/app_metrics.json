@@ -1,15 +1,15 @@
 {
-  "updated_at": "2026-08-06T23:30:03.755695",
+  "updated_at": "2026-08-15T14:35:42.009325",
   "metrics": {
     "chart.update": {
       "name": "chart.update",
-      "avg_duration": 0.08914829999957874,
-      "max_duration": 0.09804009999970731,
-      "total_duration": 0.17829659999915748,
-      "call_count": 2,
+      "avg_duration": 0.12084545999996407,
+      "max_duration": 0.17909439999993992,
+      "total_duration": 1.2084545999996408,
+      "call_count": 10,
       "error_count": 0,
       "success_rate": 1.0,
-      "last_execution_time": 1786030178.1408577
+      "last_execution_time": 1786775713.3423667
     }
   }
 }

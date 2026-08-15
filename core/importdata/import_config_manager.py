@@ -42,6 +42,36 @@ class DataFrequency(Enum):
     MONTHLY = "monthly"         # 月线
 
 
+# R292 修复：DuckDB frequency 字符串 → DataFrequency 枚举的完整映射。
+# 任务创建向导此前缺 '5min'/'15min'/'30min'/'60min'/'1M' 键，导致选 5/15/30/60
+# 分钟或月线创建任务时静默降级为日线（frequency_map.get(..., DAILY) 兜底）；
+# 且 '1m' 被误映射为 MONTHLY（月线）——'1m' 在 Period 语义中是 1 分钟。
+# R292 追加：补 '1h'/'1H'（Period.normalize 的 60 分钟别名）、'weekly'/'monthly'
+# （Period.to_frequency 输出）与 'tick' 键，此前这些频率创建任务时均静默降级日线。
+# 本映射覆盖 Period.to_duckdb_frequency 的全部输出 + 常见别名。
+DUCKDB_FREQUENCY_TO_DATA_FREQUENCY = {
+    '1d': DataFrequency.DAILY,
+    '1w': DataFrequency.WEEKLY,
+    '1M': DataFrequency.MONTHLY,
+    '1m': DataFrequency.MINUTE_1,
+    '1min': DataFrequency.MINUTE_1,
+    '5m': DataFrequency.MINUTE_5,
+    '5min': DataFrequency.MINUTE_5,
+    '15m': DataFrequency.MINUTE_15,
+    '15min': DataFrequency.MINUTE_15,
+    '30m': DataFrequency.MINUTE_30,
+    '30min': DataFrequency.MINUTE_30,
+    '60m': DataFrequency.HOUR_1,
+    '60min': DataFrequency.HOUR_1,
+    '1h': DataFrequency.HOUR_1,
+    '1H': DataFrequency.HOUR_1,
+    'weekly': DataFrequency.WEEKLY,
+    'monthly': DataFrequency.MONTHLY,
+    'tick': DataFrequency.TICK,
+    'daily': DataFrequency.DAILY,
+}
+
+
 class ImportStatus(Enum):
     """导入状态"""
     PENDING = "pending"         # 等待中

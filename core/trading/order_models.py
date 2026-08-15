@@ -71,6 +71,7 @@ class Order:
     filled_price: float = 0.0
     commission: float = 0.0
     error_message: Optional[str] = None
+    error_code: Optional[str] = None  # R271: 风控拒绝错误码 (RISK_HALTED/DAILY_LOSS_LIMIT_EXCEEDED 等), 供 UI 展示拒绝原因
     stop_price: Optional[float] = None
     user_id: str = "system"
     account_id: str = "default"
@@ -142,6 +143,7 @@ class Order:
             'filled_price': self.filled_price,
             'commission': self.commission,
             'error_message': self.error_message,
+            'error_code': self.error_code,
             'stop_price': self.stop_price,
             'user_id': self.user_id,
             'account_id': self.account_id,
@@ -188,6 +190,7 @@ class Order:
             filled_price=data.get('filled_price', 0.0),
             commission=data.get('commission', 0.0),
             error_message=data.get('error_message'),
+            error_code=data.get('error_code'),
             stop_price=data.get('stop_price'),
             user_id=data.get('user_id', 'system'),
             account_id=data.get('account_id', 'default'),

@@ -564,6 +564,129 @@ class BettaFishAgent(BaseService):
                 'timestamp': datetime.now()
             }
 
+    def get_risk_assessment(self) -> Dict[str, Any]:
+        """
+        获取风险评估数据（供仪表板风险评估面板调用）
+
+        优先返回 risk_agent 缓存中最新一次成功的真实评估结果;
+        无缓存时返回含全部默认键的占位数据, 保证面板正常激活显示。
+
+        Returns:
+            风险数据 dict, 键集与 risk_assessment_panel 期望一致
+        """
+        try:
+            latest = self._latest_risk_assessment()
+            if latest is not None:
+                return self._risk_assessment_to_panel_dict(latest)
+        except Exception as e:
+            logger.error(f"获取风险评估数据失败: {e}")
+        return self._default_risk_assessment()
+
+    def get_risk_alerts(self) -> List[Dict[str, Any]]:
+        """
+        获取风险预警列表（供仪表板风险评估面板调用）
+
+        Returns:
+            预警列表, 每项含 timestamp/level/type/description 键; 无数据返回空列表
+        """
+        alerts = []
+        try:
+            latest = self._latest_risk_assessment()
+            if latest is not None:
+                for alert in latest.risk_alerts:
+                    level = "ERROR" if alert.level.value in ("high", "very_high") else "WARNING"
+                    alerts.append({
+                        "timestamp": alert.timestamp,
+                        "level": level,
+                        "type": alert.risk_type.value,
+                        "description": alert.message,
+                    })
+        except Exception as e:
+            logger.error(f"获取风险预警失败: {e}")
+        return alerts
+
+    def _latest_risk_assessment(self) -> Optional[Any]:
+        """从 risk_agent 缓存中提取最新一次成功的风险评估结果"""
+        cache = getattr(self.risk_agent, "_risk_cache", None)
+        if not cache:
+            return None
+        latest = None
+        for value in cache.values():
+            if isinstance(value, dict) and value.get("status") == "success":
+                latest = value.get("assessment_result")
+        return latest
+
+    def _risk_assessment_to_panel_dict(self, assessment: Any) -> Dict[str, Any]:
+        """将 RiskAssessmentResult 转换为面板期望键格式"""
+        metrics = {m.name: m for m in getattr(assessment, "risk_metrics", None) or []}
+        decomposition = getattr(assessment, "risk_decomposition", None) or {}
+
+        def metric_value(name, default=0.0):
+            metric = metrics.get(name)
+            return metric.value if metric is not None else default
+
+        def metric_level(name, default="low"):
+            metric = metrics.get(name)
+            if metric is None:
+                return default
+            return {"high": "high", "very_high": "high", "medium": "medium"}.get(
+                metric.risk_level.value, default)
+
+        def decomposition_pct(name):
+            return (decomposition.get(name) or 0) * 100
+
+        breakdown = {
+            "market_risk_pct": decomposition_pct("MarketRisk"),
+            "liquidity_risk_pct": decomposition_pct("LiquidityRisk"),
+            "credit_risk_pct": decomposition_pct("CreditRisk"),
+            "operational_risk_pct": decomposition_pct("OperationalRisk"),
+            "concentration_risk_pct": decomposition_pct("ConcentrationRisk"),
+        }
+        # 风险分解为空时均分兜底, 保证 breakdown 图有数据
+        if not decomposition:
+            share = 100.0 / 5
+            breakdown = {key: share for key in breakdown}
+
+        return {
+            "overall_risk": getattr(assessment, "risk_score", 0.0),
+            "overall_risk_level": getattr(assessment, "overall_risk_level", "unknown"),
+            "var_95": (getattr(assessment, "var_estimate", None) or 0) * 100,
+            "max_drawdown": metric_value("MaxDrawdown") * 100,
+            "sharpe_ratio": metric_value("SharpeRatio"),
+            "volatility": metric_value("Volatility") * 100,
+            "correlation": metric_value("Beta"),
+            "concentration": metric_value("ConcentrationRisk") * 100,
+            "market_risk": metric_level("MarketRisk"),
+            "liquidity_risk": metric_level("LiquidityRisk"),
+            "credit_risk": metric_level("CreditRisk"),
+            "operational_risk": metric_level("OperationalRisk"),
+            "concentration_risk": metric_level("ConcentrationRisk"),
+            **breakdown,
+        }
+
+    def _default_risk_assessment(self) -> Dict[str, Any]:
+        """无缓存时的默认风险数据（含全部面板期望键, 数值 0 占位）"""
+        return {
+            "overall_risk": 0,
+            "overall_risk_level": "unknown",
+            "var_95": 0.0,
+            "max_drawdown": 0.0,
+            "sharpe_ratio": 0.0,
+            "volatility": 0.0,
+            "correlation": 0.0,
+            "concentration": 0.0,
+            "market_risk": "low",
+            "liquidity_risk": "low",
+            "credit_risk": "low",
+            "operational_risk": "low",
+            "concentration_risk": "low",
+            "market_risk_pct": 20.0,
+            "liquidity_risk_pct": 20.0,
+            "credit_risk_pct": 20.0,
+            "operational_risk_pct": 20.0,
+            "concentration_risk_pct": 20.0,
+        }
+
     def get_sentiment_analysis(self) -> Dict[str, Any]:
         """
         获取整体舆情分析数据（供仪表板面板调用）

@@ -22,24 +22,45 @@ except ImportError:
     logger.warning("Ta-lib 库不可用，使用自定义实现")
 
 
+# 渲染判组唯一来源（R282 统一 left_panel/middle_panel 判组口径）：
+# 这些指标在 indicator_mixin 有专门渲染分支（MA/MACD/RSI/BOLL + 本地 KDJ），
+# 其余一律走 TA-Lib 通用分支（talib 组）。
+# 注意：CCI/OBV 不在此列（R242 起有意改走 talib 组 + TA-Lib 直算），
+# left_panel 的 UI 分组（type）与渲染判组无关，事件只传递指标名。
+BUILTIN_INDICATORS = frozenset({'MA', 'MACD', 'RSI', 'BOLL', 'KDJ'})
+
+
 def get_talib_real_indicator_list():
-    """获取Ta-lib指标列表"""
+    """获取Ta-lib指标列表（动态枚举：TA-Lib支持哪些图表指标就展示哪些，随TA-Lib版本自动扩展）
+
+    R264 由硬编码46个改为动态枚举 talib.get_functions()：
+    - 排除形态识别（CDL*，由形态识别系统处理）
+    - 排除不适合图表叠加的非分析类（数学运算/数学变换/统计/周期/价格变换/MAVP）
+    保留 Overlap/Momentum/Volume/Volatility/部分统计类 = 图表指标全集（约59个）。
+    计算端 TALIB_OUTPUT_MAP（unified_indicator_service.py）已同步覆盖该全集，
+    新增TA-Lib函数时：若属于保留类会自动进入列表，计算端补一行输出映射即可。
+    """
     if TALIB_AVAILABLE and talib:
         try:
-            # 返回Ta-lib中的主要指标
-            return [
-                'SMA', 'EMA', 'WMA', 'DEMA', 'TEMA', 'TRIMA',
-                'KAMA', 'MAMA', 'T3',
-                'MACD', 'MACDEXT', 'MACDFIX',
-                'RSI', 'STOCH', 'STOCHF', 'STOCHRSI',
-                'WILLR', 'ADX', 'ADXR', 'APO', 'AROON', 'AROONOSC',
-                'BOP', 'CCI', 'CMO', 'DX', 'MFI', 'MINUS_DI',
-                'MINUS_DM', 'MOM', 'PLUS_DI', 'PLUS_DM', 'PPO',
-                'ROC', 'ROCP', 'ROCR', 'ROCR100', 'TRIX', 'ULTOSC',
-                'BBANDS', 'DEMA', 'EMA', 'HT_TRENDLINE', 'KAMA',
-                'MA', 'MIDPOINT', 'MIDPRICE', 'SAR', 'SAREXT',
-                'SMA', 'T3', 'TEMA', 'TRIMA', 'WMA'
-            ]
+            # 不适合图表叠加的指标（Math/Stat/Cycle/PriceTransform/MAVP）
+            excluded = {
+                # Math Operators（数值运算，非行情分析指标）
+                'ADD', 'DIV', 'MAX', 'MAXINDEX', 'MIN', 'MININDEX', 'MINMAX',
+                'MINMAXINDEX', 'MULT', 'SUB', 'SUM',
+                # Math Transform（数学变换）
+                'ACOS', 'ASIN', 'ATAN', 'CEIL', 'COS', 'COSH', 'EXP', 'FLOOR',
+                'LN', 'LOG10', 'SIN', 'SINH', 'SQRT', 'TAN', 'TANH',
+                # Statistic Functions（统计类保留 LINEARREG*/STDDEV/TSF/VAR，排除双输入 BETA/CORREL）
+                'BETA', 'CORREL',
+                # Cycle Indicators（周期类，HT_TRENDLINE 已在 Overlap 中保留）
+                'HT_DCPERIOD', 'HT_DCPHASE', 'HT_PHASOR', 'HT_SINE', 'HT_TRENDMODE',
+                # Price Transform（价格变换，非分析指标）
+                'AVGPRICE', 'MEDPRICE', 'TYPPRICE', 'WCLPRICE',
+                # MAVP 需要周期数组参数，UI 无法配置
+                'MAVP',
+            }
+            return [f for f in talib.get_functions()
+                    if not f.startswith('CDL') and f not in excluded]
         except Exception as e:
             logger.error(f"获取Ta-lib指标列表失败: {e}")
 

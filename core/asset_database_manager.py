@@ -23,7 +23,11 @@ import json
 import pandas as pd
 
 from loguru import logger
-from core.database.duckdb_manager import DuckDBConnectionManager, DuckDBConfig
+# R292-HVD-A: 收敛为 get_connection_manager() 模块级单例 — 原直接构造
+# DuckDBConnectionManager() 会绕过单例, 与运行时 get_connection_manager()
+# 消费者 (unified_data_manager / backtest_result_manager 等) 各自建池,
+# 同 DB 双池 + 配置 (R288/R289 apply_default_config 仅注入单例) 不共享。
+from core.database.duckdb_manager import get_connection_manager, DuckDBConfig
 from core.asset_type_identifier import AssetTypeIdentifier, get_asset_type_identifier
 from core.plugin_types import AssetType, DataType
 
@@ -111,6 +115,11 @@ class AssetSeparatedDatabaseManager:
         """获取单例实例"""
         if cls._instance is None:
             cls._instance = cls(config)
+        elif not getattr(cls._instance, '_initialized', False):
+            # 防御：__new__ 直建裸实例（测试或异常路径绕过 __init__）被注册为单例时，
+            # 补齐初始化，否则 get_database_path 等访问 self.config 会 AttributeError，
+            # 且可能携带 __new__ 后临时打上的 MagicMock 属性污染运行期。
+            cls._instance.__init__(config)
         return cls._instance
 
     def __init__(self, config: Optional[AssetDatabaseConfig] = None):
@@ -141,7 +150,10 @@ class AssetSeparatedDatabaseManager:
 
         # 核心组件
         self.asset_identifier = get_asset_type_identifier()
-        self.duckdb_manager = DuckDBConnectionManager()
+        # R292-HVD-A: 收敛为模块级单例 (duckdb_manager.py:851 get_connection_manager),
+        # 全局唯一连接池 + 配置统一生效; initialize_duckdb_manager 已幂等化,
+        # SectorDataService 懒加载重建不会使本引用失效。
+        self.duckdb_manager = get_connection_manager()
 
         # 数据库映射和信息
         self._asset_databases: Dict[AssetType, str] = {}
@@ -154,11 +166,26 @@ class AssetSeparatedDatabaseManager:
         # DuckDB不支持真正的并发写入，必须串行化写入操作
         self._write_lock = threading.Lock()
 
+        # HVD-C: monitor_latest 历史预填并发上限。旧库升级时最多 16 个 db 文件
+        # (asset/sector 别名映射) 各 spawn 一个预填线程 (L977-982), 若同时执行
+        # 全表 GROUP BY 聚合会放大 IO/CPU 争用。Semaphore(2) 保证同时最多 2 个
+        # 回填在执行, 其余线程排队错峰 (首启升级一次性场景, 无长尾)。
+        self._backfill_semaphore = threading.Semaphore(2)
+
         # R237 HVD-237-B-001: dispose 幂等标志 (R78 铁律 #6)
         self._disposed = False
 
         # 标准表结构定义
         self._table_schemas = self._initialize_table_schemas()
+
+        # R287 P1-2：表结构/列元数据会话级缓存（key=db_path|table_name）。
+        # 每次落库 store_standardized_data 都触发 _ensure_table_exists 的
+        # duckdb_tables() 查询 + _migrate_table_schema 的 DESCRIBE，以及
+        # _upsert_data 内 _get_table_columns 的 duckdb_columns() 查询，
+        # 单次落库 3 次元数据查询、零缓存。此处按库+表缓存"已确认存在"与
+        # 列名列表，命中直接跳过（表结构在会话内由本类独占维护，不失效）。
+        self._table_exists_cache: Dict[str, bool] = {}
+        self._table_columns_cache: Dict[str, List[str]] = {}
 
         # 初始化
         self._initialize_directories()
@@ -259,6 +286,26 @@ class AssetSeparatedDatabaseManager:
                 )
             """,
 
+            # R287 P0-2：质量最近评估物化表。
+            # data_quality_monitor 按 check_date 逐日累积（每 symbol+source+frequency 每天
+            # 一条），视图内 latest 子查询需全表 GROUP BY，聚合成本随天数线性增长。
+            # monitor_latest 每 symbol+data_source+frequency 仅保留最近一次评估（INSERT OR
+            # REPLACE 幂等维护），视图/查询直接 JOIN 该精简表，避免每次全表聚合。
+            'monitor_latest': """
+                CREATE TABLE IF NOT EXISTS monitor_latest (
+                    symbol VARCHAR NOT NULL,
+                    data_source VARCHAR NOT NULL,
+                    frequency VARCHAR NOT NULL DEFAULT '1d',
+                    check_date DATE NOT NULL,
+                    quality_score DECIMAL(5,2),
+                    anomaly_count INTEGER DEFAULT 0,
+                    missing_count INTEGER DEFAULT 0,
+                    completeness_score DECIMAL(5,2),
+                    details TEXT,
+                    PRIMARY KEY (symbol, data_source, frequency)
+                )
+            """,
+
             # 统一视图 - 最优质量K线数据
             # 逻辑：优先选择质量分数高的数据源，若无质量评分则选择最新更新的数据
             'unified_best_quality_kline': """
@@ -290,10 +337,18 @@ class AssetSeparatedDatabaseManager:
                                 hkd.updated_at DESC
                         ) as quality_rank
                     FROM historical_kline_data hkd
-                    LEFT JOIN data_quality_monitor dqm ON (
-                        hkd.symbol = dqm.symbol 
-                        AND hkd.data_source = dqm.data_source 
-                        AND DATE(hkd.timestamp) = dqm.check_date
+                    -- R285 修复：JOIN 断链——原条件 DATE(hkd.timestamp) = dqm.check_date
+                    -- 中 check_date 是"落库评估当天"（store_standardized_data 落库时写
+                    -- date.today()），而 hkd.timestamp 是 K 线交易日，历史 K 线永远无法
+                    -- 命中 → quality_score 恒 NULL → 回退硬编码数据源优先级，"质量优选"
+                    -- 对历史数据名存实亡。改为关联"每 symbol+data_source+frequency 最近
+                    -- 一次评估记录"（质量分代表该源最近一次落库的整体质量，与交易日解耦）。
+                    -- R287 P0-2：JOIN 目标由"全表 GROUP BY 最近评估子查询"改为物化表
+                    -- monitor_latest（每 symbol+data_source+frequency 仅一行，落库时
+                    -- INSERT OR REPLACE 同步维护），消除每次查询的全表聚合开销。
+                    LEFT JOIN monitor_latest dqm ON (
+                        hkd.symbol = dqm.symbol
+                        AND hkd.data_source = dqm.data_source
                         AND hkd.frequency = dqm.frequency
                     )
                 )
@@ -447,6 +502,7 @@ class AssetSeparatedDatabaseManager:
                     
                     -- 错误信息
                     error_message TEXT,
+                    error_code TEXT,
                     
                     -- 止损价格
                     stop_price DECIMAL(18,4),
@@ -727,7 +783,7 @@ class AssetSeparatedDatabaseManager:
             size_mb = file_stat.st_size / (1024 * 1024)
 
             # 获取数据库内部信息
-            with self.duckdb_manager.get_connection(db_path) as conn:
+            with self.duckdb_manager.get_connection(db_path, pool_size=self.config.pool_size) as conn:
                 # 获取表数量 - 使用duckdb_tables()更高效
                 tables_result = conn.execute("""
                     SELECT COUNT(*) as table_count 
@@ -836,7 +892,10 @@ class AssetSeparatedDatabaseManager:
         try:
             view_names = ['unified_best_quality_kline', 'kline_with_metadata', 'fundamental_with_metadata']
 
-            with self.duckdb_manager.get_connection(db_path) as conn:
+            # R292-HVD-B: 预热建池显式传 self.config.pool_size (默认10, 可被数据库
+            # max_pool_size 配置 5-100 覆盖), 池由首个调用者定容, 此处是启动
+            # 预热决定性入口 (原默认15 → 8库×15=120 连接)
+            with self.duckdb_manager.get_connection(db_path, pool_size=self.config.pool_size) as conn:
                 # 数据库迁移：为现有的data_quality_monitor表添加frequency字段
                 # 只在表已存在且缺少frequency字段时才执行迁移
                 try:
@@ -907,6 +966,33 @@ class AssetSeparatedDatabaseManager:
                         import traceback
                         logger.error(traceback.format_exc())
                         raise  # 表创建失败应该抛出异常
+
+                # R287 P0-2 + R288：monitor_latest 历史预填（旧库升级场景）。
+                # data_quality_monitor 已积累历史记录而 monitor_latest 为空时，
+                # 视图 JOIN 会回退硬编码数据源优先级，失去质量优选。此处用
+                # data_quality_monitor 最近一次评估一次性回填（INSERT OR REPLACE
+                # 幂等，后续由 _evaluate_and_record_quality / import_execution_engine
+                # 落库时同步维护）。
+                # R288 修复：a) 空表守卫——monitor_latest 非空直接跳过，避免每次启动
+                # 都全表 GROUP BY 重算（二次启动起零开销）；b) 旧库首次升级（表空）时
+                # 预填放后台线程执行——初始化运行在 Qt 主线程、事件循环启动前，
+                # data_quality_monitor 数十万行时全表聚合可阻塞主线程数秒~十几秒。
+                try:
+                    existing = conn.execute(
+                        "SELECT COUNT(*) FROM monitor_latest"
+                    ).fetchone()[0]
+                    if existing > 0:
+                        self._monitor_latest_table_ready = True
+                        logger.debug(f"monitor_latest 已有 {existing} 条数据，跳过历史预填")
+                    else:
+                        threading.Thread(
+                            target=self._async_backfill_monitor_latest,
+                            args=(db_path,),
+                            daemon=True,
+                            name="monitor-latest-backfill",
+                        ).start()
+                except Exception as e:
+                    logger.warning(f"monitor_latest 预填检查失败（表不存在属正常）: {e}")
 
                 # 第二步：确保所有视图存在（使用CREATE OR REPLACE VIEW确保100%成功）
                 for view_name in view_names:
@@ -1003,7 +1089,9 @@ class AssetSeparatedDatabaseManager:
                 compression=self.config.compression
             )
 
-            with self.duckdb_manager.get_connection(db_path, config=duckdb_config) as conn:
+            # R292-HVD-B: 新建库建池显式传 pool_size (原默认15)
+            with self.duckdb_manager.get_connection(db_path, pool_size=self.config.pool_size,
+                                                    config=duckdb_config) as conn:
                 # 数据库迁移：为现有的data_quality_monitor表添加frequency字段
                 # 只在表已存在且缺少frequency字段时才执行迁移
                 try:
@@ -1159,9 +1247,15 @@ class AssetSeparatedDatabaseManager:
             except Exception as persist_err:
                 logger.warning(f"数据库连接池配置持久化失败（忽略继续）: {persist_err}")
 
-            # 注意：已创建的连接池不会自动更新，需要重新创建
-            # 这里先更新配置，下次get_pool时会使用新配置
-            logger.info(f"数据库连接池大小配置已更新为: {new_pool_size}（将在下次创建新连接池时生效）")
+            # HVD-E: 运行时立即重建全部池为新容量（不再"下次建池生效"）。
+            # rebuild_all_pools 必须显式传 pool_size——apply_default_config
+            # (duckdb_manager.py:659) 重建不传参的教训是落回默认 50。
+            # 重建中断窗口内业务连接短暂排队（池满有 30s 临时逃生通道），不中断业务。
+            try:
+                self.duckdb_manager.rebuild_all_pools(new_pool_size)
+                logger.info(f"数据库连接池大小已更新为: {new_pool_size}（已立即生效）")
+            except Exception as rebuild_err:
+                logger.error(f"连接池重建失败（下次建池时按新配置生效）: {rebuild_err}")
 
             return True
         except Exception as e:
@@ -1444,6 +1538,44 @@ class AssetSeparatedDatabaseManager:
                     logger.error(f"无效的数据类型字符串: {data_type}，使用默认值 HISTORICAL_KLINE")
                     data_type = DataType.HISTORICAL_KLINE
 
+            # R275 兜底：所有插件（东财/baostock/akshare/tongdaxin/sina/crypto/期货等 11 文件 12 处
+            # set_index('datetime')/set_index('date')）返回的 K 线 df 均以时间为索引，
+            # 此处统一在落库入口兼容，覆盖全部 store_standardized_data 调用方（含导入/HTTP 桥接路径），
+            # 避免 timestamp 列缺失违反 NOT NULL 约束导致落库失败。
+            if data_type == DataType.HISTORICAL_KLINE:
+                if ('timestamp' not in data.columns
+                        and 'datetime' not in data.columns
+                        and 'date' not in data.columns
+                        and (isinstance(data.index, pd.DatetimeIndex)
+                             or data.index.name in ('datetime', 'date'))):
+                    data = data.reset_index()
+                    # R292 修复：无命名 DatetimeIndex reset_index 后新列为 'index'，
+                    # 统一改名为 datetime（与 unified_data_manager._persist_kdata_to_duckdb 一致），
+                    # 否则 timestamp 列缺失 → 违反 NOT NULL 约束落库失败。
+                    if 'index' in data.columns and 'datetime' not in data.columns:
+                        data = data.rename(columns={'index': 'datetime'})
+
+                # R278 数据治理：落库质量门禁。
+                # 统一对所有经 store_standardized_data 落库的 K 线数据做多维质量评估，
+                # 并将质量分写入 data_quality_monitor 表（此前仅 import_execution_engine
+                # 路径写该表，TET 主链路 / HTTP 桥接等路径落库不评估 →
+                # unified_best_quality_kline 视图对大部分数据回退硬编码数据源优先级 50-65）。
+                # 严重质量缺陷记录警告，默认不阻断落库（保持现有兼容行为）。
+                # R285 修复2：落库质量准入——捕获质量分，开启配置
+                # data.reject_low_quality_kline 后，低质量 K 线（<60 分）拒绝落库；
+                # 默认 False 保持"只记录不拦截"兼容行为，坏数据至少写入 monitor 可追溯。
+                try:
+                    quality_score = self._evaluate_and_record_quality(data, asset_type)
+                    if (quality_score is not None
+                            and self._reject_low_quality_kline_enabled()
+                            and quality_score < self._QUALITY_REJECT_THRESHOLD):
+                        symbol = str(data['symbol'].iloc[0]) if 'symbol' in data.columns else '?'
+                        logger.warning(f"[数据质量] 低质量K线拒绝落库 symbol={symbol} "
+                                       f"score={quality_score:.1f} < {self._QUALITY_REJECT_THRESHOLD}")
+                        return False
+                except Exception as quality_error:
+                    logger.debug(f"落库质量评估/记录失败: {quality_error}")
+
             # 确保数据库存在
             db_path = self._ensure_database_exists(asset_type)
 
@@ -1472,6 +1604,189 @@ class AssetSeparatedDatabaseManager:
             logger.error(f"存储标准化数据失败: {e}")
             return False
 
+    def _evaluate_and_record_quality(self, data: pd.DataFrame, asset_type: AssetType) -> float:
+        """R278 数据治理：落库质量门禁实现
+
+        1) 对 K 线数据做多维质量评估（完整性/准确性/一致性/唯一性 + OHLC 逻辑，
+           委托 DataQualityRiskManager → DataQualityMonitor，data_type='kline'
+           触发 K 线跳变/量能专项检测）。
+        2) OHLC 必需字段缺失或严重逻辑异常 → 记录 warning（默认不阻断，兼容现状）。
+        3) 质量分写入 data_quality_monitor 表（INSERT OR REPLACE 幂等），
+           使 unified_best_quality_kline 视图用真实评分排序。
+
+        Returns:
+            float: 质量分 0-100
+        """
+        from datetime import date
+        _eval_start = time.perf_counter()
+        quality_manager = self._get_quality_manager()
+        report = quality_manager.assess_quality(data, 'kline', {
+            'source': 'store_standardized_data',
+            # R285 修复6：落库评估属于历史回填/增量补库场景，K 线最新交易日早于
+            # 当天是正常状态（场景B 拉更早历史），标记 backfill 让 timeliness 给
+            # 中性分，避免"历史回填被当质量缺陷惩罚"。
+            'backfill': True,
+        })
+        score = float(report.get('quality_score', 0) or 0)
+        _eval_elapsed = (time.perf_counter() - _eval_start) * 1000
+        logger.debug(f"[质量评估] {len(data)} 条记录六维评估耗时 {_eval_elapsed:.1f}ms, score={score:.1f}")
+
+        # OHLC 必需字段/逻辑校验（严重缺陷给出明确警告）
+        try:
+            ohlc_valid, ohlc_errors = self._validate_kline_data_quality(data)
+            if not ohlc_valid:
+                logger.warning(f"[数据质量] K线落库OHLC校验未通过 (score={score:.1f}): {ohlc_errors}")
+        except Exception as e:
+            logger.debug(f"OHLC校验异常: {e}")
+
+        # 质量分写库（供 unified_best_quality_kline 视图真实评分）
+        try:
+            if 'symbol' not in data.columns:
+                return score
+            symbol = str(data['symbol'].iloc[0])
+            if not symbol:
+                return score
+            source = str(data['data_source'].iloc[0]) if 'data_source' in data.columns else 'tet_plugin'
+            freq = str(data['frequency'].iloc[0]) if 'frequency' in data.columns else '1d'
+            monitor_id = f"{symbol}_{source}_{date.today().isoformat()}_{freq}"
+            missing_count = int(data.isnull().sum().sum())
+            completeness = float(report.get('completeness', 0) or 0) / 100.0
+            anomaly_count = int(report.get('issues', 0) or 0)
+            total_records = int(len(data))
+
+            with self._write_lock:
+                _write_start = time.perf_counter()
+                with self.duckdb_manager.get_connection(self._ensure_database_exists(asset_type)) as conn:
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO data_quality_monitor
+                        (monitor_id, symbol, data_source, check_date, frequency,
+                         quality_score, anomaly_count, missing_count,
+                         completeness_score, details)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [monitor_id, symbol, source, date.today(), freq,
+                         round(score, 2), anomaly_count, missing_count,
+                         round(completeness, 4),
+                         f"Records: {total_records}, Quality: {score:.2f}"]
+                    )
+                    # R287 P0-2：同步维护 monitor_latest 物化表（每 symbol+data_source+
+                    # frequency 仅保留最近一次评估，替代视图/查询内全表 GROUP BY 子查询）
+                    self._ensure_monitor_latest_table(conn)
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO monitor_latest
+                        (symbol, data_source, frequency, check_date, quality_score,
+                         anomaly_count, missing_count, completeness_score, details)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [symbol, source, freq, date.today(),
+                         round(score, 2), anomaly_count, missing_count,
+                         round(completeness, 4),
+                         f"Records: {total_records}, Quality: {score:.2f}"]
+                    )
+                _write_elapsed = (time.perf_counter() - _write_start) * 1000
+                logger.debug(f"[质量分写库] {symbol}/{freq} monitor+monitor_latest 写库耗时 {_write_elapsed:.1f}ms")
+        except Exception as write_error:
+            logger.debug(f"质量分写库失败: {write_error}")
+
+        return score
+
+    def _ensure_monitor_latest_table(self, conn) -> None:
+        """R287 P0-2：确保 monitor_latest 物化表存在（会话级标志缓存，仅首建时执行 DDL）
+
+        monitor_latest 随 _table_schemas 在系统初始化时自动创建；此处兜底兼容
+        旧库升级/未走初始化路径的场景，CREATE TABLE IF NOT EXISTS 幂等。
+        """
+        if getattr(self, '_monitor_latest_table_ready', False):
+            return
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS monitor_latest (
+                    symbol VARCHAR NOT NULL,
+                    data_source VARCHAR NOT NULL,
+                    frequency VARCHAR NOT NULL DEFAULT '1d',
+                    check_date DATE NOT NULL,
+                    quality_score DECIMAL(5,2),
+                    anomaly_count INTEGER DEFAULT 0,
+                    missing_count INTEGER DEFAULT 0,
+                    completeness_score DECIMAL(5,2),
+                    details TEXT,
+                    PRIMARY KEY (symbol, data_source, frequency)
+                )
+            """)
+            self._monitor_latest_table_ready = True
+        except Exception as e:
+            logger.debug(f"确保 monitor_latest 表存在失败: {e}")
+
+    def _async_backfill_monitor_latest(self, db_path: str) -> None:
+        """R288：后台线程回填 monitor_latest（旧库升级首次触发）
+
+        初始化（_initialize_database_schema）运行在 Qt 主线程、事件循环启动前，
+        预填 SQL 对 data_quality_monitor 全表 GROUP BY，数据量大（数十万行）时
+        可阻塞主线程数秒~十几秒。仅在 monitor_latest 为空（旧库首次升级）时触发
+        一次；线程内用独立连接（DuckDB 连接不跨线程共享，不能复用初始化 conn）。
+        回填完成前视图 JOIN 空 monitor_latest 走 LEFT JOIN + 硬编码优先级回退
+        （unified_best_quality_kline 定义注释明示此兜底行为），功能不丢失，
+        仅质量优选延迟生效（后台秒级完成）。
+        """
+        # HVD-C: 信号量限并发错峰——多 db 文件同时升级时, 最多 2 个回填并行,
+        # 其余排队, 避免 16 线程同时对各自 data_quality_monitor 全表 GROUP BY。
+        with self._backfill_semaphore:
+            try:
+                with self.duckdb_manager.get_connection(db_path) as conn:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO monitor_latest
+                        (symbol, data_source, frequency, check_date, quality_score,
+                         anomaly_count, missing_count, completeness_score, details)
+                        SELECT dqm2.symbol, dqm2.data_source, dqm2.frequency, dqm2.check_date,
+                               dqm2.quality_score, dqm2.anomaly_count, dqm2.missing_count,
+                               dqm2.completeness_score, dqm2.details
+                        FROM data_quality_monitor dqm2
+                        INNER JOIN (
+                            SELECT symbol, data_source, frequency,
+                                   MAX(check_date) AS max_check_date
+                            FROM data_quality_monitor
+                            GROUP BY symbol, data_source, frequency
+                        ) latest_dqm ON dqm2.symbol = latest_dqm.symbol
+                            AND dqm2.data_source = latest_dqm.data_source
+                            AND dqm2.frequency = latest_dqm.frequency
+                            AND dqm2.check_date = latest_dqm.max_check_date
+                    """)
+                    self._monitor_latest_table_ready = True
+                    logger.info(f"monitor_latest 物化表历史预填完成（后台线程）: {db_path}")
+            except Exception as e:
+                logger.warning(f"monitor_latest 历史预填失败（后台线程）: {db_path} - {e}")
+
+    def _get_quality_manager(self):
+        """R278：惰性获取 DataQualityRiskManager 单例（模块内复用，避免每次落库 new）"""
+        quality_manager = getattr(self, '_quality_manager', None)
+        if quality_manager is None:
+            from core.data_quality_risk_manager import DataQualityRiskManager
+            quality_manager = DataQualityRiskManager()
+            self._quality_manager = quality_manager
+        return quality_manager
+
+    # R285 修复2：落库质量准入阈值（0-100 口径，与视图硬编码 tushare=65 同量级）
+    _QUALITY_REJECT_THRESHOLD = 60.0
+
+    def _reject_low_quality_kline_enabled(self) -> bool:
+        """R285 修复2：低质量 K 线落库拒绝开关（config data.reject_low_quality_kline）
+
+        默认 False：保持"只记录不拦截"兼容行为（历史 import / HTTP 桥接链路不受影响）；
+        开启后 store_standardized_data 对质量分 < _QUALITY_REJECT_THRESHOLD 的
+        K 线批次直接拒绝落库（返回 False），从源头阻断坏数据入库。
+        """
+        try:
+            from core.config import get_config_manager
+            config_mgr = get_config_manager()
+            data_cfg = config_mgr.get('data')
+            if isinstance(data_cfg, dict):
+                return bool(data_cfg.get('reject_low_quality_kline', False))
+        except Exception:
+            pass
+        return False
+
     def _generate_table_name(self, data_type: DataType, asset_type: AssetType) -> str:
         """生成表名 - 新架构使用统一的表名"""
         # 新架构：所有资产类型使用统一的标准表名
@@ -1486,15 +1801,36 @@ class AssetSeparatedDatabaseManager:
         # 直接返回标准表名，不再添加asset_type前缀
         return type_mapping.get(data_type, data_type.value.lower())
 
+    def _schema_cache_key(self, conn, table_name: str) -> str:
+        """R287 P1-2：生成表结构/列元数据缓存的 key（db_path|table_name）"""
+        db_path = getattr(conn, 'database_path', None)
+        if db_path:
+            return f"{db_path}|{table_name}"
+        return f"conn_{id(conn)}|{table_name}"
+
     def _ensure_table_exists(self, conn, table_name: str, data: pd.DataFrame, data_type: DataType):
-        """确保表存在，如果不存在则创建；如已存在则检查并迁移表结构"""
+        """确保表存在，如果不存在则创建；如已存在则检查并迁移表结构
+
+        R287 P1-2：会话级缓存（self._table_exists_cache）命中时直接返回，
+        跳过 duckdb_tables() 存在性查询与 _migrate_table_schema 的 DESCRIBE。
+        表结构在本类会话内独占维护（仅本类建表/迁移），缓存不失效。
+        """
         try:
+            # R287 P1-2：命中缓存直接跳过元数据查询
+            cache_key = self._schema_cache_key(conn, table_name)
+            if cache_key in self._table_exists_cache:
+                logger.debug(f"[表结构-缓存] 命中 {table_name}，跳过 duckdb_tables/DESCRIBE")
+                return
+
             # 检查表是否存在 - 使用duckdb_tables()更高效
+            _q_start = time.perf_counter()
             table_exists = conn.execute(f"""
                 SELECT COUNT(*) 
                 FROM duckdb_tables() 
                 WHERE table_name = '{table_name}'
             """).fetchone()[0] > 0
+            _q_elapsed = (time.perf_counter() - _q_start) * 1000
+            logger.debug(f"[表结构-DB] {table_name} 存在性查询耗时 {_q_elapsed:.1f}ms, exists={table_exists}")
 
             if not table_exists:
                 # 根据数据类型创建表结构
@@ -1504,9 +1840,16 @@ class AssetSeparatedDatabaseManager:
 
                 # 创建索引
                 self._create_table_indexes(conn, table_name, data_type)
+                # 表新建，列集与最新结构一致 → 同步失效列缓存
+                self._table_columns_cache.pop(cache_key, None)
             else:
                 # 表已存在，检查并迁移表结构（添加缺失的复权字段）
                 self._migrate_table_schema(conn, table_name)
+                # 迁移可能增列 → 同步失效列缓存
+                self._table_columns_cache.pop(cache_key, None)
+
+            # 已确认存在且结构就绪
+            self._table_exists_cache[cache_key] = True
 
         except Exception as e:
             logger.error(f"创建表 {table_name} 失败: {e}")
@@ -1767,14 +2110,23 @@ class AssetSeparatedDatabaseManager:
             logger.warning(f"创建索引失败: {e}")
 
     def _get_table_columns(self, conn, table_name: str) -> list:
-        """获取表的列名"""
+        """获取表的列名（R287 P1-2：会话级缓存，命中跳过 duckdb_columns() 查询）"""
+        cache_key = self._schema_cache_key(conn, table_name)
+        if cache_key in self._table_columns_cache:
+            logger.debug(f"[列名-缓存] 命中 {table_name}，跳过 duckdb_columns() 查询")
+            return self._table_columns_cache[cache_key]
         try:
+            _q_start = time.perf_counter()
             result = conn.execute(f"""
                 SELECT column_name 
                 FROM duckdb_columns() 
                 WHERE table_name = '{table_name}'
             """).fetchall()
-            return [row[0] for row in result]
+            _q_elapsed = (time.perf_counter() - _q_start) * 1000
+            columns = [row[0] for row in result]
+            self._table_columns_cache[cache_key] = columns
+            logger.debug(f"[列名-DB] {table_name} 查询耗时 {_q_elapsed:.1f}ms, {len(columns)} 列")
+            return columns
         except Exception as e:
             logger.warning(f"获取表列名失败 {table_name}: {e}")
             return []
@@ -1790,8 +2142,31 @@ class AssetSeparatedDatabaseManager:
         data_copy = data.copy()
         for data_field, table_field in field_mapping.items():
             if data_field in data_copy.columns and table_field in table_columns:
-                data_copy.rename(columns={data_field: table_field}, inplace=True)
-                logger.debug(f"[字段映射] {data_field} → {table_field}")
+                if table_field in data_copy.columns:
+                    # R290 防御：数据已同时携带 data_field 与 table_field 两列时，
+                    # rename 会产生重复列 → DuckDB "Duplicate column name" 报错。
+                    # 原逻辑直接删除源列保留目标列；R292 修复：若目标列为垃圾
+                    # （可解析日期数量明显少于源列），反用源列覆盖目标列，避免把
+                    # 损坏/伪造的 timestamp 写入数据库（日线日期集中的隐患之一）。
+                    try:
+                        _tf_valid = pd.to_datetime(
+                            data_copy[table_field], errors='coerce').notna().sum()
+                        _df_valid = pd.to_datetime(
+                            data_copy[data_field], errors='coerce').notna().sum()
+                    except Exception:
+                        _tf_valid = _df_valid = 0
+                    if _df_valid > _tf_valid:
+                        logger.warning(
+                            f"[字段映射] {table_field} 列有效日期({_tf_valid}条) 少于 "
+                            f"{data_field}({_df_valid}条)，用 {data_field} 覆盖 {table_field}")
+                        data_copy = data_copy.drop(columns=[table_field])
+                        data_copy = data_copy.rename(columns={data_field: table_field})
+                    else:
+                        logger.debug(f"[字段映射] {data_field} 与 {table_field} 并存，删除冗余列 {data_field}")
+                        data_copy = data_copy.drop(columns=[data_field])
+                else:
+                    data_copy.rename(columns={data_field: table_field}, inplace=True)
+                    logger.debug(f"[字段映射] {data_field} → {table_field}")
 
         # 找出data中存在但表中不存在的列
         extra_columns = [col for col in data_copy.columns if col not in table_columns]
@@ -1839,18 +2214,17 @@ class AssetSeparatedDatabaseManager:
                 logger.warning(f"[数据插入] 输入数据缺少datetime字段！")
 
             if 'timestamp' in data.columns:
-                logger.warning(f"[数据插入] 检测到timestamp字段，这可能导致问题！应该使用datetime字段")
+                # R292 清理：timestamp 已是 DuckDB K线表标准列名（datetime 会经字段
+                # 映射转为 timestamp），此告警文案过时会误导，降为 debug 提示。
+                logger.debug(f"[数据插入] 数据含 timestamp 列（标准列名，datetime 映射后正常落库）")
 
-            # 数据质量验证（仅对K线数据）
-            if data_type == DataType.HISTORICAL_KLINE:
-                is_valid, errors = self._validate_kline_data_quality(data)
-                if not is_valid:
-                    logger.warning(f"[数据质量] 数据质量验证失败: {errors}")
-                    # 记录警告但继续处理（根据配置可以选择拒绝数据）
-                    for error in errors:
-                        logger.warning(f"[数据质量] {error}")
-                else:
-                    logger.debug(f"[数据质量] 数据质量验证通过")
+            # R287 P1-1：移除此处重复的数据质量验证。
+            # store_standardized_data 在落库前已统一调用 _evaluate_and_record_quality
+            # （内部含六维质量评估 + _validate_kline_data_quality OHLC 校验，结果写入
+            # data_quality_monitor/monitor_latest）。同一批数据在 _upsert_data 内被
+            # 再次做同款 OHLC 校验属重复计算（原链路同一批数据最多被评估 5 次）。
+            # 移除后校验/记录行为不变（_evaluate_and_record_quality 仅对
+            # HISTORICAL_KLINE 生效，与此处原条件范围一致）。
 
             # 获取表的实际列名
             table_columns = self._get_table_columns(conn, table_name)
@@ -2337,7 +2711,7 @@ class AssetSeparatedDatabaseManager:
         try:
             db_path = self._get_database_path(asset_type)
 
-            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+            with self.duckdb_manager.get_pool(db_path, pool_size=self.config.pool_size).get_connection() as conn:
                 if 'asset_metadata' in self._table_schemas:
                     try:
                         table_exists = conn.execute("""
@@ -2478,7 +2852,7 @@ class AssetSeparatedDatabaseManager:
         """获取单个资产的元数据"""
         try:
             db_path = self._get_database_path(asset_type)
-            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+            with self.duckdb_manager.get_pool(db_path, pool_size=self.config.pool_size).get_connection() as conn:
                 if 'asset_metadata' in self._table_schemas:
                     try:
                         table_exists = conn.execute("""
@@ -2525,7 +2899,7 @@ class AssetSeparatedDatabaseManager:
                 return {}
 
             db_path = self._get_database_path(asset_type)
-            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+            with self.duckdb_manager.get_pool(db_path, pool_size=self.config.pool_size).get_connection() as conn:
                 if 'asset_metadata' in self._table_schemas:
                     try:
                         table_exists = conn.execute("""
@@ -2579,7 +2953,7 @@ class AssetSeparatedDatabaseManager:
         """
         try:
             db_path = self._get_database_path(asset_type)
-            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+            with self.duckdb_manager.get_pool(db_path, pool_size=self.config.pool_size).get_connection() as conn:
                 if 'fundamentals' in self._table_schemas:
                     try:
                         table_exists = conn.execute("""
@@ -2641,7 +3015,7 @@ class AssetSeparatedDatabaseManager:
         """
         try:
             db_path = self._get_database_path(asset_type)
-            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+            with self.duckdb_manager.get_pool(db_path, pool_size=self.config.pool_size).get_connection() as conn:
                 # 表不存在则直接返回空（避免查询报错）
                 try:
                     table_exists = conn.execute("""
@@ -2703,7 +3077,7 @@ class AssetSeparatedDatabaseManager:
                 return {}
 
             db_path = self._get_database_path(asset_type)
-            with self.duckdb_manager.get_pool(db_path).get_connection() as conn:
+            with self.duckdb_manager.get_pool(db_path, pool_size=self.config.pool_size).get_connection() as conn:
                 if 'fundamentals' in self._table_schemas:
                     try:
                         table_exists = conn.execute("""
@@ -2747,10 +3121,18 @@ class AssetSeparatedDatabaseManager:
             return {}
 
     def close_all_connections(self):
-        """关闭所有数据库连接"""
+        """关闭所有数据库连接 (R292-HVD-A: 收敛后池归全局单例管理)
+
+        原实现调 self.duckdb_manager.close_all_pools() 关闭自持实例的池;
+        收敛为 get_connection_manager() 模块级单例后, 此处若仍 close_all_pools
+        会一次性关闭所有组件 (unified_data_manager / backtest_result_manager /
+        enhanced_duckdb_data_downloader 等) 共享的池, 提前杀掉在用连接。
+        连接池收尾统一由 main.py 注册的 cleanup_duckdb_manager
+        (duckdb_manager.py:886) 在 graceful_shutdown LIFO 中执行, 本方法
+        仅保留幂等安全语义, 不再关闭连接。
+        """
         try:
-            self.duckdb_manager.close_all_pools()
-            logger.info("所有资产数据库连接已关闭")
+            logger.debug("AssetSeparatedDatabaseManager: 连接池归全局单例管理, 关闭动作交由 cleanup_duckdb_manager 统一执行")
 
         except Exception as e:
             logger.error(f"关闭数据库连接失败: {e}")

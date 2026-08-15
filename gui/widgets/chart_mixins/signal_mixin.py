@@ -1074,11 +1074,27 @@ class SignalMixin:
         # 线程安全保护：尝试获取渲染锁
         if QMUTEX_AVAILABLE and hasattr(self, '_render_lock'):
             with QMutexLocker(self._render_lock):
+                # R279：保存最后绘制的形态参数，供 update_chart 清场后恢复
+                self._last_pattern_display = {
+                    'all_indices': all_indices,
+                    'highlighted_index': highlighted_index,
+                    'pattern_name': pattern_name,
+                    'analysis_type': analysis_type,
+                    'pattern_data': pattern_data,
+                }
                 self._draw_pattern_signals_impl(
                     all_indices, highlighted_index, pattern_name, 
                     analysis_type, pattern_data
                 )
         else:
+            # R279：保存最后绘制的形态参数，供 update_chart 清场后恢复
+            self._last_pattern_display = {
+                'all_indices': all_indices,
+                'highlighted_index': highlighted_index,
+                'pattern_name': pattern_name,
+                'analysis_type': analysis_type,
+                'pattern_data': pattern_data,
+            }
             self._draw_pattern_signals_impl(
                 all_indices, highlighted_index, pattern_name,
                 analysis_type, pattern_data
@@ -1223,6 +1239,12 @@ class SignalMixin:
             if hasattr(self, 'canvas') and self.canvas:
                 try:
                     self.canvas.draw_idle()
+                    # R279 修复：形态绘制后失效十字光标 blit 背景。
+                    # 否则 blit 背景快照停留在"无形态"旧画面，鼠标移入中间面板时
+                    # _blit_crosshair 的 restore_region 会把画布覆盖回旧快照，
+                    # 形态标记被物理擦除（用户报告的"鼠标移入即消失"根因）。
+                    if hasattr(self, '_invalidate_crosshair_background'):
+                        self._invalidate_crosshair_background()
                 except Exception as e:
                     logger.warning(f"canvas.draw_idle() 失败: {e}")
             

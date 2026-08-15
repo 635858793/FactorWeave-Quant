@@ -97,25 +97,18 @@ class LogWidget(QTextEdit):
 
         self.log_appended.connect(self._append_log_safe)
 
-        self._pending_logs: list = []
-        self._flush_timer = QTimer(self)
-        self._flush_timer.setSingleShot(True)
-        self._flush_timer.timeout.connect(self._flush_pending_logs)
-
     def append_log(self, message: str, level: str = 'INFO'):
-        """添加日志消息 - 批量发送，减少信号频率"""
-        color = self.level_colors.get(level, self.palette().text().color().name())
-        formatted_msg = f'<span style="color: {color};">[{level}] {message}</span>'
-        self._pending_logs.append((formatted_msg, level))
-        if not self._flush_timer.isActive():
-            self._flush_timer.start(100)
+        """添加日志消息 - 通过信号安全追加
 
-    def _flush_pending_logs(self):
-        """批量刷新待处理的日志"""
-        logs = self._pending_logs
-        self._pending_logs = []
-        for formatted_msg, level in logs:
-            self.log_appended.emit(formatted_msg, level)
+        Why 修复 (R290): 原实现用 _flush_timer 批量刷新，但运行期日志大量来自后台
+        工作线程，QTimer 无法在非拥有线程 start()，定时器永不触发，日志永久堆积在
+        _pending_logs，导致 GUI 日志面板启动后不再刷新。
+        Fix: 直接 emit log_appended 信号，跨线程自动 QueuedConnection 到主线程执行，
+        Qt 信号发射本身线程安全，后台线程日志可正常显示。
+        """
+        color = self.level_colors.get(level, '#CCCCCC')
+        formatted_msg = f'<span style="color: {color};">[{level}] {message}</span>'
+        self.log_appended.emit(formatted_msg, level)
 
     @pyqtSlot(str, str)
     def _append_log_safe(self, formatted_msg: str, level: str):

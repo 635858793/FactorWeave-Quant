@@ -102,7 +102,9 @@ class TestThresholdAlertHandlers(unittest.TestCase):
         event = _Event(alert=alert_obj)
         self.handler.handle_resource_alert_event(event)
         kwargs = self.handler.alert_service.process_alert.call_args[1]
-        self.assertEqual(kwargs['message'], alert_obj.message)
+        # HVD-D: 消息静态化——不再透传 ResourceMonitor 的动态文本 (内嵌数值
+        # → 指纹不稳), 用标准展示名重建静态消息; 数值仅存 metadata
+        self.assertEqual(kwargs['message'], "CPU使用率超过阈值")
         self.assertEqual(kwargs['metadata']['current_value'], 95.0)
         # R242-A-003: 采用权威 severity 字段, CRITICAL 不再被倍率重算降级
         self.assertEqual(kwargs['level'].value, "critical")
