@@ -863,19 +863,35 @@ class ScheduledTaskDialog(BaseDialog):
                 QMessageBox.warning(self, "错误", "找不到任务")
                 return
 
-            if self.import_engine:
-                start_task = getattr(self.import_engine, 'start_task', None)
-                if start_task is None:
-                    QMessageBox.warning(self, "错误", "导入引擎不支持启动任务")
+            engine = self.import_engine
+            if engine is None:
+                # R293 修复: 复用 scheduled_task_executor.py L216-229 懒加载模式，
+                # coordinator 打开「定时导入任务」时未注入 import_engine，导致
+                # "立即执行"恒提示"导入引擎不可用"; 此处自动创建引擎使手动执行可用
+                try:
+                    from core.importdata.import_execution_engine import DataImportExecutionEngine
+                    logger.info("导入引擎未设置，自动创建导入引擎实例...")
+                    engine = DataImportExecutionEngine(
+                        config_manager=self.config_manager,
+                        max_workers=8
+                    )
+                    self.import_engine = engine
+                    logger.info("导入引擎自动创建成功")
+                except Exception as e:
+                    logger.error(f"创建导入引擎失败: {e}")
+                    QMessageBox.warning(self, "错误", f"导入引擎创建失败: {e}")
                     return
-                success = start_task(target_task.task_id)
-                if success:
-                    logger.info(f"立即执行任务: {task_name}")
-                    QMessageBox.information(self, "成功", f"任务 \"{task_name}\" 已启动")
-                else:
-                    QMessageBox.warning(self, "失败", "任务启动失败")
+
+            start_task = getattr(engine, 'start_task', None)
+            if start_task is None:
+                QMessageBox.warning(self, "错误", "导入引擎不支持启动任务")
+                return
+            success = start_task(target_task.task_id)
+            if success:
+                logger.info(f"立即执行任务: {task_name}")
+                QMessageBox.information(self, "成功", f"任务 \"{task_name}\" 已启动")
             else:
-                QMessageBox.warning(self, "错误", "导入引擎不可用")
+                QMessageBox.warning(self, "失败", "任务启动失败")
 
         except Exception as e:
             logger.error(f"立即执行任务失败: {e}")

@@ -1163,6 +1163,27 @@ class UnifiedDataManager:
                     stock_code, period, count, asset_type, start_date=start_date)
                 if new_df is not None and not new_df.empty:
                     new_parts.append((new_df, new_plugin_id))
+            else:
+                # R294 修复: 分钟线"当天内"增量补齐——原实现仅 latest_ts.date() < today
+                # 才触发，DB 已有当日部分分钟数据时，当天新产生的分钟永远无法增量拉取。
+                # 分钟频率下: 最新时刻落后当前时刻 >= 2 个周期时长即重拉当天数据，
+                # 由下游按 datetime 精确去重(L1208-1210)只插入新时刻，实现按时刻增量;
+                # TET/东财增量参数仅支持日期粒度(东财 beg=YYYYMMDD)，当天重拉+精确
+                # 去重即达到时刻级增量效果；2 周期阈值避免每次刷新都重拉当天全量。
+                intraday_minutes = {
+                    '1min': 1, '5min': 5, '15min': 15,
+                    '30min': 30, '60min': 60,
+                }.get(freq)
+                if intraday_minutes is not None:
+                    span = pd.Timedelta(minutes=2 * intraday_minutes)
+                    if latest_ts < now - span:
+                        start_date = latest_ts.strftime('%Y%m%d')
+                        logger.info(f"[增量更新-分钟当天] {stock_code} {period} 最新={latest_ts} "
+                                    f"落后>={2 * intraday_minutes}分钟，重拉当天 {start_date} 增量")
+                        new_df, new_plugin_id = self._fetch_kdata_from_tet(
+                            stock_code, period, count, asset_type, start_date=start_date)
+                        if new_df is not None and not new_df.empty:
+                            new_parts.append((new_df, new_plugin_id))
 
             # 场景B：历史补齐（DB 条数 < count，且历史未耗尽）
             if len(db_df) < count and not self._kdata_history_exhausted.get(check_key):
@@ -2064,58 +2085,6 @@ class UnifiedDataManager:
             logger.error(traceback.format_exc())
             return pd.DataFrame()
 
-    def _store_to_duckdb(self, data: pd.DataFrame, stock_code: str, period: str):
-        """存储数据到DuckDB"""
-        try:
-            if not self.duckdb_operations or data.empty:
-                return
-
-            # 识别资产类型
-            asset_type = self.asset_identifier.identify_asset_type(stock_code)
-            db_path = self.asset_manager.get_database_path(asset_type)
-
-            # R251 修复: 统一写入 historical_kline_data 表(与读取端 _get_kdata_from_duckdb 一致)。
-            # 此前使用 kline_data_{period} 动态表名, 读取端永远查不到写入的数据。
-            table_name = "historical_kline_data"
-
-            # 列名统一映射(code→symbol, date/datetime→timestamp), 与表结构对齐
-            store_data = data.copy()
-            for src, dst in [('code', 'symbol'), ('date', 'timestamp'), ('datetime', 'timestamp')]:
-                if src in store_data.columns and dst not in store_data.columns:
-                    store_data = store_data.rename(columns={src: dst})
-
-            if 'symbol' not in store_data.columns:
-                store_data['symbol'] = stock_code
-
-            if 'timestamp' not in store_data.columns:
-                if 'datetime' in store_data.columns:
-                    store_data['timestamp'] = pd.to_datetime(store_data['datetime'])
-                else:
-                    logger.warning(f"DuckDB数据存储失败: {stock_code} K线数据缺少时间列")
-                    return
-
-            if 'frequency' not in store_data.columns:
-                from core.plugin_types import Period
-                store_data['frequency'] = Period.to_duckdb_frequency(period)
-
-            if 'data_source' not in store_data.columns:
-                store_data['data_source'] = 'unified_data_manager'
-
-            # 插入数据（使用upsert避免重复）
-            result = self.duckdb_operations.insert_dataframe(
-                database_path=db_path,
-                table_name=table_name,
-                data=store_data,
-                upsert=True,
-                conflict_columns=['symbol', 'data_source', 'timestamp', 'frequency']
-            )
-
-            if result.success:
-                logger.info(f" 数据存储到DuckDB成功: {stock_code}, {len(data)}条")
-
-        except Exception as e:
-            logger.warning(f"DuckDB数据存储失败: {e}")
-
     async def _store_asset_list_to_duckdb(self, data: pd.DataFrame, asset_type: AssetType, market: str = None):
         """存储资产列表到DuckDB（异步后备机制数据持久化）"""
         try:
@@ -2979,6 +2948,66 @@ class UnifiedDataManager:
             logger.warning(f" 传统模式不支持资产类型: {asset_type.value} | 建议启用TET模式")
             return None
 
+    def _get_intraday_data(self, symbol: str, asset_type: AssetType = AssetType.STOCK_A,
+                           date: str = None, **kwargs) -> pd.DataFrame:
+        """获取分时数据（TET模式，R295-G4 数据链路层）
+
+        构造 StandardQuery(data_type=DataType.INTRADAY_DATA) 走 TET 管道：
+        tet_data_pipeline._extract_from_source else 兜底 (L844-853) 自动调
+        plugin.fetch_data(symbol, 'intraday_data', **extra_params) → 通达信
+        get_minute_time_data（pytdx 空/异常时降级腾讯分时源）。
+
+        Args:
+            symbol: 股票代码
+            asset_type: 资产类型（默认股票）
+            date: 交易日 YYYYMMDD, 默认实时分时 (透传 extra_params['date'])
+            **kwargs: 其他参数
+
+        Returns:
+            pd.DataFrame: index=datetime, 列 [price, vol, amount]; 失败返回空 DataFrame
+        """
+        try:
+            if not self.tet_enabled or not self.tet_pipeline:
+                logger.warning(f"TET模式未启用，无法获取分时数据: {symbol}")
+                return pd.DataFrame()
+
+            from ..tet_data_pipeline import StandardQuery
+            from ..plugin_types import DataType
+
+            extra_params = kwargs.copy()
+            if date:
+                extra_params['date'] = date
+
+            query = StandardQuery(
+                symbol=symbol,
+                asset_type=asset_type,
+                data_type=DataType.INTRADAY_DATA,
+                period='1min',  # 分时语义 (TET transform_query 仅透传 metadata)
+                extra_params=extra_params
+            )
+
+            result = self.tet_pipeline.process(query)
+            data = getattr(result, 'data', None)
+            if isinstance(data, pd.DataFrame) and not data.empty:
+                logger.info(f" TET分时数据获取成功: {symbol} | {len(data)} 点")
+                return data
+            logger.warning(f" TET分时数据为空: {symbol} {date or '实时'}")
+            return pd.DataFrame()
+
+        except Exception as e:
+            logger.warning(f" TET模式获取分时数据失败: {symbol} - {e}")
+            return pd.DataFrame()
+
+    def get_intraday_data(self, symbol: str, date: str = None,
+                          asset_type: AssetType = AssetType.STOCK_A, **kwargs) -> pd.DataFrame:
+        """获取分时数据（公有入口，R295-G4 图表层轮询调用）
+
+        薄封装 _get_intraday_data：构造 StandardQuery(INTRADAY_DATA) 走 TET 管道，
+        数据源层空/异常自动降级腾讯分时源。失败返回空 DataFrame
+        （index=DatetimeIndex，列 [price, vol, amount]）。
+        """
+        return self._get_intraday_data(symbol, asset_type=asset_type, date=date, **kwargs)
+
     def _format_asset_list(self, asset_data: pd.DataFrame) -> List[Dict[str, Any]]:
         """格式化资产列表为标准格式"""
         if asset_data.empty:
@@ -3347,6 +3376,11 @@ class UnifiedDataManager:
                 # 获取K线数据（传递资产类型与日期区间）
                 return await self._get_kdata(stock_code, period=actual_period, count=count,
                                              asset_type=asset_type, start_date=start_date, end_date=end_date)
+            elif data_type in ('intraday', 'intraday_data', 'minute_time'):
+                # R295-G4 分时数据链路: 走 TET 管道 (StandardQuery INTRADAY_DATA)
+                # → plugin.fetch_data(symbol, 'intraday_data', date=...)
+                return self._get_intraday_data(
+                    stock_code, asset_type=asset_type, date=kwargs.get('date'))
             elif data_type == 'financial':
                 # 获取财务数据
                 return await self._get_financial_data(stock_code)

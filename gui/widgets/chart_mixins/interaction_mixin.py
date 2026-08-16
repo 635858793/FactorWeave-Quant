@@ -478,6 +478,9 @@ class InteractionMixin:
                     new_center - window_size/2, new_center + window_size/2)
 
             self.canvas.draw()
+            # HV6：高亮（含 set_xlim 视图变化）后背景快照过时
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
 
         except Exception as e:
             if True:  # 使用Loguru日志
@@ -503,6 +506,9 @@ class InteractionMixin:
             self._tooltip_artists = []
 
             self.canvas.draw()
+            # HV6：清除高亮后背景快照过时
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
 
         except Exception as e:
             if True:  # 使用Loguru日志

@@ -17,6 +17,60 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Tuple, Optional
 
+
+def _bucket_key_indices(kdata, max_points):
+    """分桶选择代表性行索引：每桶保留 峰(最高价)+谷(最低价) 两行，桶内含
+    涨跌停时追加涨跌停行；首尾行强制保留（走势连续性）
+
+    R292-HV4：替代等距 linspace 抽行——等距抽行会丢失桶内最高/最低、涨跌停、
+    巨量 bar（关键价格形态失真）。迭代修正（T3 实测暴露）：原"巨量>最高>最低"
+    单行优先级中 volume 列必然存在导致巨量分支独占、峰谷兜底成死代码；改为
+    每桶 峰+谷 双行（信息量翻倍），涨跌停 P0 四色追加，首尾强制保留。选"整行"
+    保持"每根蜡烛=真实交易日 bar"语义（指标/十字光标不受影响）；
+    limit_up/limit_down 列随行保留（铁律⑲/㉑：limit 掩码由上游降采样前全量
+    计算，此处仅做行选择不重判）。
+
+    ponytail: 涨跌停桶最多 3 行/桶，极端数据下总行数可能轻微超出 max_points
+    （渲染上限仍在 ~1800 根内）；如需硬性预算可改为"涨跌停替换谷"。
+
+    Args:
+        kdata: K线数据DataFrame
+        max_points: 目标最大行数
+
+    Returns:
+        np.ndarray: 选中的行索引（升序，正常情况长度 ≤ max_points）
+    """
+    n = len(kdata)
+    if n <= max_points:
+        return np.arange(n)
+    # 每桶 2 行（峰+谷）满配：num_buckets=(max_points-2)//2 预留首尾 2 行；
+    # 涨跌停桶追加行使总行数在极端数据下轻微超出 max_points（渲染上限仍在
+    # ~1800 根内，性能不受影响）——ponytail: 如需硬性预算可改"涨跌停替换谷"
+    num_buckets = max(1, (max_points - 2) // 2)
+    edges = np.linspace(0, n, num_buckets + 1).astype(int)
+    has_limit = 'limit_up' in kdata.columns and 'limit_down' in kdata.columns
+    hi = kdata['high'].to_numpy(dtype=float)
+    lo = kdata['low'].to_numpy(dtype=float)
+    lu = kdata['limit_up'].to_numpy(dtype=bool) if has_limit else None
+    ld = kdata['limit_down'].to_numpy(dtype=bool) if has_limit else None
+    chosen = []
+    for s, e in zip(edges[:-1], edges[1:]):
+        if s >= e:
+            continue
+        picks = {s + int(np.argmax(hi[s:e]))}  # 峰：桶内最高价
+        if has_limit:
+            hit_u = np.nonzero(lu[s:e])[0]
+            hit_d = np.nonzero(ld[s:e])[0]
+            if len(hit_u):
+                picks.add(s + int(hit_u[0]))  # 涨停（P0 四色）
+            if len(hit_d):
+                picks.add(s + int(hit_d[0]))  # 跌停（P0 四色）
+        if len(picks) < 2:
+            picks.add(s + int(np.argmin(lo[s:e])))  # 谷：桶内最低价
+        chosen.extend(picks)
+    return np.array(sorted(set(chosen) | {0, n - 1}))
+
+
 class UtilityMixin:
     """工具功能Mixin
 
@@ -25,6 +79,15 @@ class UtilityMixin:
 
     def _downsample_kdata(self, kdata, max_points=1200):
         """对K线数据做降采样，提升渲染性能
+
+        R293-G3: 分钟/日内频率数据改为按交易日时间窗口聚合抽样——每个交易日
+        至少保留 max_points//交易日数 根（下限2），长历史分钟数据不再被等距
+        抽样稀疏化到"当日仅剩数根"（当日走势细节不丢）。日线等低频维持等距抽样。
+
+        R292-HV4: 日线兜底抽样由"等距 linspace 抽行"升级为"分桶代表性行"——
+        等距抽行会丢失桶内最高价/最低价、涨跌停、巨量 bar（关键价格形态失真）；
+        桶内按优先级 涨跌停→巨量→最高价→最低价 选代表性整行，limit 列随行保留
+        （铁律⑲/㉑：limit 掩码由上游降采样前全量计算，此处仅做行选择不重判）。
 
         Args:
             kdata: K线数据DataFrame
@@ -35,34 +98,110 @@ class UtilityMixin:
         """
         if len(kdata) <= max_points:
             return kdata
-        idx = np.linspace(0, len(kdata)-1, max_points).astype(int)
+        if self._is_minute_frequency(kdata):
+            # 分钟数据：按交易日聚合抽样，保证每个交易日保留足够的走势细节
+            try:
+                ts = pd.to_datetime(kdata['datetime'])
+                days = ts.dt.normalize()
+                n_days = int(days.nunique())
+                per_day = max(2, max_points // n_days)
+                groups = []
+                for _, grp in kdata.groupby(days, sort=False):
+                    if len(grp) <= per_day:
+                        groups.append(grp)
+                    else:
+                        idx = _bucket_key_indices(grp, per_day)
+                        groups.append(grp.iloc[idx])
+                return pd.concat(groups)
+            except Exception:
+                pass  # 聚合失败回退等距抽样
+        idx = _bucket_key_indices(kdata, max_points)
         return kdata.iloc[idx]
 
-    def _safe_format_date(self, row, idx, kdata):
+    @staticmethod
+    def _is_minute_frequency(kdata) -> bool:
+        """判断K线数据是否为分钟/日内频率（相邻时刻间隔 < 1 天）
+
+        R293: 分钟降采样感知与时刻标签共用。datetime 列优先，缺失时检查
+        DatetimeIndex。数值型整数日期按 _coerce_to_datetime 语义解析，
+        避免 pd.to_datetime(int) 按纳秒解释产生 1ns 假间隔误判为分钟。
+        """
+        try:
+            if kdata is None or len(kdata) < 2:
+                return False
+            if 'datetime' in kdata.columns:
+                col = kdata['datetime']
+                ts = pd.to_datetime(
+                    col.map(UtilityMixin._coerce_to_datetime), errors='coerce')
+                ts = ts.dropna()
+                if len(ts) >= 2:
+                    diffs = ts.diff().dropna()
+                    if len(diffs) and diffs.median() < pd.Timedelta(days=1):
+                        return True
+            # datetime 列缺失或无法解析 → 检查 DatetimeIndex
+            if pd.api.types.is_datetime64_any_dtype(kdata.index):
+                ts = pd.to_datetime(kdata.index)
+                diffs = ts.diff().dropna()
+                if len(diffs) and diffs.median() < pd.Timedelta(days=1):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _safe_format_date(self, row, idx, kdata, period=None):
         """安全地格式化日期，处理数值索引和datetime索引的情况
+
+        R293-G1: 增加分钟/分时感知——分钟频率数据 X 轴刻度标签输出时刻
+        （当日 '%H:%M'，历史交易日 '%m-%d %H:%M' 防止同日标签重复），
+        日线维持 '%Y-%m-%d'。频率判断优先使用调用方传入的 period
+        （Period.is_intraday），未传入时回退按数据自身间隔检测
+        （_is_minute_frequency）。
 
         Args:
             row: K线数据行
             idx: K线索引
             kdata: K线数据DataFrame
+            period: 可选周期字符串（如 '1m'/'D'/'分时'），用于分钟感知
 
         Returns:
             str: 格式化后的日期字符串
         """
+        is_minute = False
+        if period is not None:
+            from core.plugin_types import Period
+            is_minute = Period.is_intraday(period)
+        if not is_minute:
+            is_minute = self._is_minute_frequency(kdata)
+
+        fmt = '%m-%d %H:%M' if is_minute else '%Y-%m-%d'
         try:
+            if is_minute and 'datetime' in kdata.columns:
+                # 分钟数据：按 datetime 列解析，当日只显示时刻，历史日含日期
+                try:
+                    ts = pd.to_datetime(
+                        kdata['datetime'].map(self._coerce_to_datetime),
+                        errors='coerce')
+                    ts_val = ts.iloc[idx]
+                    if pd.notna(ts_val):
+                        last_day = ts.max().normalize()
+                        if ts_val.normalize() == last_day:
+                            return ts_val.strftime('%H:%M')
+                        return ts_val.strftime('%m-%d %H:%M')
+                except Exception:
+                    pass
             # 优先从kdata的实际索引获取datetime
             if hasattr(kdata.index[idx], 'strftime'):
-                return kdata.index[idx].strftime('%Y-%m-%d')
+                return kdata.index[idx].strftime(fmt)
             elif hasattr(row.name, 'strftime'):
                 # 如果索引本身是datetime
-                return row.name.strftime('%Y-%m-%d')
+                return row.name.strftime(fmt)
             else:
                 # 如果都不是datetime，检查是否有datetime列
                 if 'datetime' in kdata.columns:
                     try:
                         date_val = self._coerce_to_datetime(kdata.iloc[idx]['datetime'])
                         if date_val is not None:
-                            return date_val.strftime('%Y-%m-%d')
+                            return date_val.strftime(fmt)
                     except Exception:
                         pass
 
@@ -70,15 +209,43 @@ class UtilityMixin:
                 try:
                     date_val = self._coerce_to_datetime(kdata.index[idx])
                     if date_val is not None:
-                        return date_val.strftime('%Y-%m-%d')
+                        return date_val.strftime(fmt)
                 except Exception:
                     pass
                 # 最后的兜底方案：使用索引位置生成相对日期
                 base_date = datetime(2024, 1, 1)
                 actual_date = base_date + timedelta(days=idx)
-                return actual_date.strftime('%Y-%m-%d')
+                return actual_date.strftime(fmt)
         except Exception:
             return f"第{idx}根K线"
+
+    def _refresh_x_date_ticks(self):
+        """R294: 按当前可见 X 轴范围重新生成日期刻度标签（缩放/平移后联动）。
+
+        渲染路径一次性写入全量等距固定 xticks（rendering_mixin L470-486 /
+        chart_widget L739-752 等），缩放/平移后 xlim 变化但刻度不跟随 → 缩放后
+        日期标签缺失/错位。本方法按 price_ax 当前可见区间重算 ticks/labels，
+        注册为 price_ax 的 'xlim_changed' 回调（zoom_mixin._init_zoom_interaction），
+        一处注册覆盖框选缩放/右拖平移/滚轮缩放/双击还原全部路径；set_xticks
+        不改变 xlim，无递归触发风险（_limit_xlim 二次 set_xlim 触发亦幂等）。
+        """
+        ax = getattr(self, 'indicator_ax', None)
+        kdata = getattr(self, 'current_kdata', None)
+        if ax is None or kdata is None or len(kdata) == 0:
+            return
+        left, right = self.price_ax.get_xlim()
+        start = max(0, int(left))
+        end = min(len(kdata), int(right) + 1)
+        if end <= start:
+            return
+        n_vis = end - start
+        step = max(1, n_vis // 8)
+        xticks = np.arange(start, end, step)
+        xticklabels = [self._safe_format_date(
+            kdata.iloc[i], i, kdata,
+            getattr(self, 'current_period', None)) for i in xticks]
+        ax.set_xticks(xticks)
+        ax.set_xticklabels(xticklabels, rotation=30, fontsize=8)
 
     @staticmethod
     def _coerce_to_datetime(val) -> Optional[pd.Timestamp]:

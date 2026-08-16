@@ -188,7 +188,7 @@ class TestMacdPerfLog:
         assert not w.indicator_ax.bar.called
 
 
-# ==================== 3. 十字光标 blit 性能采样日志 ====================
+# ==================== 3. 十字光标 blit 统一引擎（R292-HV5） ====================
 
 class TestCrosshairPerfLog:
     def _make(self):
@@ -196,15 +196,15 @@ class TestCrosshairPerfLog:
         c.canvas = MagicMock()
         c.figure = MagicMock()
         c.figure.bbox = 'bbox'
-        c._blit_background = None
         c._crosshair_lines = {}
         c._crosshair_text = None
         c._crosshair_xtext = None
         c._crosshair_ytext = None
+        c._hide_crosshair_elements = MagicMock()
         return c
 
     def test_background_rebuild_emits_perf_log(self, monkeypatch):
-        """首次/失效后 blit 背景重建（全画布 draw+copy）输出耗时日志"""
+        """首次/失效后 blit 背景重建（全画布 draw+copy）输出耗时日志（BlitEngine 内置）"""
         c = self._make()
         mock_info = MagicMock()
         monkeypatch.setattr(crosshair_mod.logger, 'info', mock_info)
@@ -219,7 +219,8 @@ class TestCrosshairPerfLog:
     def test_reuse_background_skips_full_draw(self, monkeypatch):
         """背景已缓存时不再全画布 draw/copy（仅 restore+blit），耗时纳入采样"""
         c = self._make()
-        c._blit_background = MagicMock()
+        assert c._blit_crosshair() is True  # 建立背景
+        c.canvas.reset_mock()
         mock_info = MagicMock()
         monkeypatch.setattr(crosshair_mod.logger, 'info', mock_info)
         c._blit_crosshair()
@@ -228,36 +229,29 @@ class TestCrosshairPerfLog:
         assert c.canvas.restore_region.called
         assert c.canvas.blit.called
 
-    def test_accumulate_logs_avg_every_60(self, monkeypatch):
-        """采样每60次输出一次均值/最大日志，并重置计数器"""
-        c = crosshair_mod.CrosshairMixin.__new__(crosshair_mod.CrosshairMixin)
-        mock_info = MagicMock()
-        monkeypatch.setattr(crosshair_mod.logger, 'info', mock_info)
-        for i in range(59):
-            c._accumulate_blit_perf(0.001)
-        assert c._blit_perf_count == 59
-        assert not mock_info.called
-        c._accumulate_blit_perf(0.003)  # 第60次触发
-        assert c._blit_perf_count == 0  # 已重置
-        assert c._blit_perf_total == 0.0
-        perf_logs = [str(call.args[0]) for call in mock_info.call_args_list
-                     if '[PERF][Crosshair] blit局部重绘' in str(call.args[0])]
-        assert len(perf_logs) == 1
-        assert 'avg=' in perf_logs[0] and 'max=' in perf_logs[0]
-
-    def test_blit_failure_fallback_logs_cost(self, monkeypatch):
-        """blit 失败回退全画布 draw_idle 时输出耗时对比日志"""
+    def test_accumulation_unified_in_blit_engine(self):
+        """R292-HV5：性能采样统一由 BlitEngine 承担，crosshair 不再自建累计"""
         c = self._make()
-        c._blit_background = MagicMock()
+        assert c._blit_crosshair() is True
+        engine = c._ensure_blit_engine()
+        assert engine._sample_every == 60
+        assert not hasattr(c, '_accumulate_blit_perf')  # R266 自建采样已删除
+        assert hasattr(engine, '_accumulate')  # BlitEngine 内置采样
+
+    def test_blit_failure_fallback_then_rebuild(self):
+        """blit 失败：引擎失效背景并回退 draw_idle；下次调用自动重建背景"""
+        c = self._make()
+        assert c._blit_crosshair() is True
         c.canvas.restore_region.side_effect = Exception('boom')
-        mock_warn = MagicMock()
-        monkeypatch.setattr(crosshair_mod.logger, 'warning', mock_warn)
         assert c._blit_crosshair() is False
         assert c.canvas.draw_idle.called
-        assert c._blit_background is None  # 失败后背景失效，下次重建
-        fallback_logs = [str(call.args[0]) for call in mock_warn.call_args_list
-                         if '[PERF][Crosshair]' in str(call.args[0])]
-        assert len(fallback_logs) == 1
+        assert c._ensure_blit_engine().background_cached is False  # 失败后背景失效
+        # 恢复后下次调用重建背景
+        c.canvas.restore_region.side_effect = None
+        c.canvas.draw_idle.reset_mock()
+        c.canvas.draw.reset_mock()
+        assert c._blit_crosshair() is True
+        assert c.canvas.draw.called  # 背景重建
 
 
 if __name__ == '__main__':

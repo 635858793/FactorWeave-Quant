@@ -151,8 +151,8 @@
     "chart_grid": "#b39ddb",
     "chart_background": "rgba(25,118,210,0.85)",
     "chart_text": "#f5f5f5",
-    "volume_up": "#ff6b81",
-    "volume_down": "#4dd0e1",
+    "volume_up": "#ff5252",
+    "volume_down": "#00e676",
     "volume_alpha": 1.0,
     "alpha": 1.0,
     "indicator_colors": [

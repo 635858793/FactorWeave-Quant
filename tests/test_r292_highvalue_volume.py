@@ -167,7 +167,6 @@ class TestFallbackVirtualScrollDataRefresh:
         """连续两次 set 不同数据：第二次渲染柱子高度必须来自新数据"""
         fr = _make_fr(_make_vr(chunk_size=5))
         fig, ax = plt.subplots()
-
         old = pd.DataFrame({
             'open': [10.0] * 12, 'high': [11.0] * 12, 'low': [9.0] * 12,
             'close': [10.5] * 12, 'volume': [9000.0] * 12,
@@ -192,3 +191,24 @@ class TestFallbackVirtualScrollDataRefresh:
         assert abs(max(ys) - 100.0) < 1e-6, f'第二次渲染柱子高度异常: {max(ys)}'
 
         plt.close(fig)
+
+    def test_virtual_scroll_disabled_by_default(self):
+        """⑤ R292-HV2：真实 MatplotlibRenderer 默认禁用成交量虚拟滚动（性能决策）。
+
+        虚拟滚动路径存在多重结构性性能缺陷（VirtualScrollRenderer.__init__ 60fps
+        QTimer 常驻 / set_data_source 每渲染清空 chunk 缓存致缓存永远 miss /
+        _render_chunk 逐柱 Python 循环），用户实测接口修正启用后系统严重卡顿。
+        现默认 _volume_virtual_renderer=None，走 numpy 向量化常规渲染
+        （快且四色列优先与 K 线一致）。
+        """
+        from core.webgpu.fallback import MatplotlibRenderer
+        r = MatplotlibRenderer()  # 真实构造（__init__ 不再创建虚拟滚动渲染器）
+        assert r._volume_virtual_renderer is None, '默认不应创建虚拟滚动渲染器'
+        r._initialized = True
+        r._data_optimizer = None  # 屏蔽数据采样优化，聚焦常规渲染
+        ax = MagicMock()
+        assert r.render_volume(ax, KLINE_DF, STYLE, x=np.arange(len(KLINE_DF)),
+                               use_datetime_axis=False) is True
+        coll = ax.add_collection.call_args[0][0]
+        assert isinstance(coll, PolyCollection), type(coll)
+        assert _face_colors(coll) == EXPECT_COLORS, _face_colors(coll)

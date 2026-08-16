@@ -312,6 +312,9 @@ class UIMixin:
             # 更新画布
             if hasattr(self, 'canvas'):
                 self.canvas.draw()
+                # HV6：figure.clear() 重建子图，背景必须失效
+                if hasattr(self, '_invalidate_crosshair_background'):
+                    self._invalidate_crosshair_background()
 
         except Exception as e:
             logger.error(f"显示无数据状态失败: {str(e)}")
@@ -350,6 +353,9 @@ class UIMixin:
             # 更新画布
             if hasattr(self, 'canvas'):
                 self.canvas.draw()
+                # HV6：figure.clear() 重建子图，背景必须失效
+                if hasattr(self, '_invalidate_crosshair_background'):
+                    self._invalidate_crosshair_background()
 
         except Exception as e:
             logger.error(f"显示消息状态失败: {str(e)}")
@@ -380,6 +386,9 @@ class UIMixin:
             # 可以在这里添加窗口大小变化时的特殊处理
             if hasattr(self, 'canvas'):
                 self.canvas.draw_idle()
+                # HV6：resize 后画布像素尺寸变化，背景快照必须失效（否则 restore 错位）
+                if hasattr(self, '_invalidate_crosshair_background'):
+                    self._invalidate_crosshair_background()
             # R283: 窗口尺寸变化后重定位"指标▼"按钮
             if hasattr(self, '_sync_region_indicator_btn_pos'):
                 self._sync_region_indicator_btn_pos()

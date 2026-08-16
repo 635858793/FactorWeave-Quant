@@ -1,11 +1,36 @@
-from loguru import logger
 """
 图表渲染功能Mixin - 处理K线渲染、指标渲染、样式配置等功能
+
+## HV6.2 末根 overlay 惰性拆分策略（R292-HV6.2）
+
+bar 内 tick 增量渲染采用"末根 overlay 独立集合"：主体集合（前 n-1 根）与末根
+分离，tick 期间主体集合**永不动**，只重建 + draw 末根 1 根（光栅化 ∝ 顶点数，
+单根 <1ms，消除 HV6.1 全视图 8 集合 draw_artist 15ms 的 blit 瓶颈）。
+
+惰性拆分时序约束（关键）：
+1. `_ensure_tick_overlay()` 在 `_update_last_bar_with_tick` **数据更新之前**调用——
+   主体集合仍是更新前 verts，末根类别须按更新前数据判定拆分，否则类别错位
+   导致主体残留末根；
+2. `_setup_tick_overlay()` 从主体 `get_paths()` 恢复顶点（PolyCollection 无
+   get_verts()），matplotlib 闭合 Path 首点重复（4 顶点 → 5 顶点 Path）须去重
+   `verts[:, :-1, :]`；
+3. 全部 8 K线 + 4 成交量 key 都建 overlay 集合（含空集合），类别迁移时可
+   set_verts 到任意类别；类别只含末根 1 根时主体必须 set_verts 空数组清空，
+   否则迁移后主体不在 blit 范围 → 旧末根残影不可清除；
+4. update_chart 全量重绘后（ax.clear 移除旧集合）惰性重建。
+
+退化回退机制：
+- overlay 不可用（单根数据 / 集合缺失 / ax 缺失 / 拆分异常）→ `_ensure_tick_overlay`
+  返回 False → tick 路径回退 HV6.1 全视图向量化重建（`_rebuild_kline_verts`/
+  `_rebuild_volume_verts`，~6ms）+ blit 主体集合（~15ms），仍远快于生产全量；
+- `_rebuild_kline_overlay`/`_rebuild_volume_overlay` 失败 → 返回 False → 外层退化
+  全量 update_chart（rendering_mixin.py L763-766）。三重回退保证 tick 路径永不断裂。
 """
 import time
 import numpy as np
 import pandas as pd
 import re
+from loguru import logger
 from typing import Dict, Any, Tuple, Optional, List
 from PyQt5.QtCore import Qt
 import matplotlib.pyplot as plt
@@ -16,7 +41,7 @@ import threading
 from core.indicator_adapter import get_indicator_english_name
 from utils.theme import parse_color_for_matplotlib
 # R292 涨跌停精确判定（按板块计算涨/跌停价，替代固定 4.8% 阈值）
-from core.rendering.limit_price import classify_limit_up_down, extract_symbol
+from core.rendering.limit_price import classify_limit_up_down, extract_symbol, is_limit_up_down
 
 
 class IndicatorPerformanceOptimizer:
@@ -104,6 +129,45 @@ class RenderingMixin:
     
     
     
+    @staticmethod
+    def _compute_intraday_series(kdata: pd.DataFrame):
+        """R294: 计算当日分时图序列（纯逻辑，可无 GUI 测试）
+
+        从 1min 周期 K 线中过滤最新交易日数据，计算昨收与成交量加权均价(VWAP)。
+
+        Returns:
+            (当日数据 DataFrame, 昨收 float|None, 均价线 Series)
+        """
+        intra = kdata
+        prev_close = None
+        # V-03 契约: 数据链路将昨收写入 prev_close 列（类1min K线，每行同值）。
+        # 优先读取该列（精确昨收，避免历史 close 错位 / 退化 open[0] 近似）；
+        # 列缺失或全空时保留原回退链路（历史 close → open[0]），行为不变。
+        if 'prev_close' in kdata.columns:
+            pc = pd.to_numeric(kdata['prev_close'], errors='coerce').dropna()
+            if len(pc):
+                prev_close = float(pc.iloc[0])
+        if 'datetime' in kdata.columns:
+            ts = pd.to_datetime(kdata['datetime'])
+            last_day = ts.max().normalize()
+            day_mask = ts.dt.normalize() == last_day
+            intra = kdata.loc[day_mask]
+            if prev_close is None and len(kdata) > len(intra):
+                # 昨收 = 最新交易日之前最后一根的收盘价
+                prev_close = float(kdata.loc[~day_mask, 'close'].iloc[-1])
+        if len(intra) == 0:
+            intra = kdata
+        if prev_close is None and len(intra):
+            prev_close = float(intra['open'].iloc[0])
+
+        # 均价线: 成交量加权 VWAP（volume 为 0 时退化为 close 均价）
+        vol = pd.to_numeric(intra['volume'], errors='coerce').fillna(0).to_numpy()
+        cl = intra['close'].to_numpy(dtype=float)
+        cum_vol = vol.cumsum()
+        with np.errstate(divide='ignore', invalid='ignore'):
+            avg = np.where(cum_vol > 0, (cl * vol).cumsum() / cum_vol, cl)
+        return intra, prev_close, pd.Series(avg, index=intra.index)
+
     def update_chart(self, data: dict = None):
         """唯一K线渲染实现，X轴为等距序号，彻底消除节假日断层。"""
         try:
@@ -206,7 +270,12 @@ class RenderingMixin:
                 except Exception as e:
                     logger.debug(f"涨跌停掩码计算失败，回退渲染层重判: {e}")
 
-            kdata = self._downsample_kdata(kdata)
+            # R277 修复：图表类型（K线图/分时图/美国线/收盘价）真实生效。
+            # 提前读取（R293-G3: 分时图数据为当日 1min，跳过降采样避免当日
+            # 分时点密度被等距抽样稀释；日线/分钟K线仍走 _downsample_kdata）。
+            chart_type = data.get('chart_type') or getattr(self, 'chart_type', None) or 'K线图'
+            if chart_type != '分时图':
+                kdata = self._downsample_kdata(kdata)
             # R290 防御：dropna 仅对 K 线必要列过滤，避免 adj_type/adj_source 等
             # 辅助列为 NaN 时 how='any' 把全部行删除导致图表空白。
             kdata = kdata.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
@@ -249,9 +318,7 @@ class RenderingMixin:
 
             start_time = time.time()
 
-            # R277 修复：图表类型（K线图/分时图/美国线/收盘价）真实生效。
-            # 原实现无条件渲染K线图（render_candlesticks），chart_type 在链路中被丢弃。
-            chart_type = data.get('chart_type') or getattr(self, 'chart_type', None) or 'K线图'
+            # 图表类型已在降采样前读取（R293-G3），此处仅记录渲染参数
             logger.info(f"渲染图表类型: {chart_type}, 数据条数: {len(kdata)}")
 
             # 记录渲染参数
@@ -277,38 +344,64 @@ class RenderingMixin:
                 except Exception as e:
                     logger.error(f"收盘价线渲染失败: {e}", exc_info=True)
             elif chart_type == '分时图':
-                # 分时图：收盘价折线 + 成交量（简化实现，数据为所选周期K线）
-                # R279 说明：当前"分时图"渲染的是所选周期（默认1分钟）的历史K线折线，
-                # 并非实时行情推送。明确标注数据性质，避免用户误认为实时分时。
+                # R294 增强: 从"历史K线折线"升级为"当日分时图"——过滤最新交易日的
+                # 1min 数据，绘制分时线(close) + 均价线(成交量加权 VWAP) + 昨收参考线。
+                # 数据源为 1min 周期 K 线(Period.MIN1 → '1min')，行情快照默认当日。
+                # 已知局限: _downsample_kdata(utility_mixin.py L26-39)等距抽样会把
+                # 长历史分钟数据稀疏化，当日分时点密度取决于实际拉取到的分钟量。
                 try:
-                    self.renderer.render_line(self.price_ax, kdata['close'], style, x=x)
-                    logger.debug("分时图渲染成功")
+                    intra, prev_close, avg = self._compute_intraday_series(kdata)
+                    x_intra = np.arange(len(intra))
+                    # 分时线（收盘价折线）
+                    self.renderer.render_line(self.price_ax, intra['close'], style, x=x_intra)
+                    # 均价线（V-04: 颜色取主题 avg_line，缺省黄色，区别于分时线）
+                    avg_style = dict(style)
+                    avg_style['color'] = style.get('avg_color', '#ffd700')
+                    self.renderer.render_line(self.price_ax, avg, avg_style, x=x_intra)
+                    # 昨收参考线（虚线）
+                    if prev_close is not None:
+                        self.price_ax.axhline(prev_close, color='#888888',
+                                              linestyle='--', linewidth=0.8, alpha=0.7)
+                    # 成交量
+                    self.renderer.render_volume(self.volume_ax, intra, style, x=x_intra)
                 except Exception as e:
                     logger.error(f"分时图渲染失败: {e}", exc_info=True)
                 try:
-                    self.renderer.render_volume(self.volume_ax, kdata, style, x=x)
-                    logger.debug("成交量渲染成功")
-                except Exception as e:
-                    logger.error(f"成交量渲染失败: {e}", exc_info=True)
-                try:
                     self.price_ax.text(
-                        0.99, 0.99, '历史K线 · 非实时行情',
+                        0.99, 0.99, '当日分时(1分钟)',
                         transform=self.price_ax.transAxes, ha='right', va='top',
                         fontsize=9, color='#888888', alpha=0.85, zorder=200)
+                    # V-05: 右上角第二行追加最新 VWAP 均价角标
+                    # （均价线计算失败时 avg 未定义 → locals().get 静默跳过）
+                    avg_latest = locals().get('avg')
+                    if avg_latest is not None and len(avg_latest):
+                        self.price_ax.text(
+                            0.99, 0.94, f'均价 {avg_latest.iloc[-1]:.2f}',
+                            transform=self.price_ax.transAxes, ha='right', va='top',
+                            fontsize=9, color='#888888', alpha=0.85, zorder=200)
                 except Exception as e:
                     logger.debug(f"分时图数据来源标注失败: {e}")
             else:  # K线图（默认）
                 try:
-                    self.renderer.render_candlesticks(self.price_ax, kdata, style, x=x)
+                    kc = self.renderer.render_candlesticks(self.price_ax, kdata, style, x=x)
+                    self._save_kline_collections(kc)
                     logger.debug("K线渲染成功")
                 except Exception as e:
                     logger.error(f"K线渲染失败: {e}", exc_info=True)
                     raise
                 try:
-                    self.renderer.render_volume(self.volume_ax, kdata, style, x=x)
+                    vc = self.renderer.render_volume(self.volume_ax, kdata, style, x=x)
+                    self._save_volume_collections(vc)
                     logger.debug("成交量渲染成功")
                 except Exception as e:
                     logger.error(f"成交量渲染失败: {e}", exc_info=True)
+                # HV6.2：末根 overlay 初始化（主体前 n-1 根 + 末根独立集合）。
+                # 必须在 autoscale_view 之前执行——overlay 含末根 high/low，
+                # 拆分后主体集合少了末根，ylim 由 overlay 补齐
+                try:
+                    self._setup_tick_overlay()
+                except Exception:
+                    pass
             render_time = (time.time() - start_time) * 1000  # 转换为毫秒
             logger.info(f"图表类型[{chart_type}]渲染，耗时: {render_time:.2f}ms")
 
@@ -426,7 +519,8 @@ class RenderingMixin:
                 step = max(1, len(kdata)//8)
                 xticks = np.arange(0, len(kdata), step)
                 xticklabels = [self._safe_format_date(
-                    kdata.iloc[i], i, kdata) for i in xticks]
+                    kdata.iloc[i], i, kdata,
+                    getattr(self, 'current_period', None)) for i in xticks]
                 x_ax = self.indicator_ax
                 x_ax.set_xticks(xticks)
                 # 修复：确保tick数量和label数量一致
@@ -564,6 +658,592 @@ class RenderingMixin:
             logger.error(f"错误详情: {type(e).__name__}: {str(e)}")
             self.show_no_data("渲染失败")
 
+    # ============================================================
+    # HV6 tick 增量渲染（R292-HV6）
+    # 统一 blit 方案（HV5）就绪后，K 线主图订阅 TickDataEvent：
+    # - bar 内 tick：只更新末根 bar 的 OHLCV + set_verts 重建对应集合 + BlitEngine blit
+    #   （基准：1200 根 9.2ms/增量 vs 41.7ms/全量，4.6x，不触发全画布 draw_idle）
+    # - 新 bar（跨周期）：x 轴右移 → 走 update_chart 全量（一次性背景重建，之后分钟级 tick 免费）
+    # - 指标联动：bar 内不更新指标（避免全量重算抵消收益），新 bar 收盘全量刷新
+    # ============================================================
+    KLINE_KEYS = ('up', 'down', 'limit_up', 'limit_down',
+                  'shadow_up', 'shadow_down', 'shadow_limit_up', 'shadow_limit_down')
+    VOLUME_KEYS = ('up', 'down', 'limit_up', 'limit_down')
+    # R292-HV6 性能日志：慢 tick 阈值（单次 > 33ms 告警）与聚合采样间隔（类属性，测试可覆盖）
+    SLOW_TICK_MS = 33.0
+    PERF_SAMPLE_EVERY = 60
+
+    def _get_tick_perf_stats(self):
+        """惰性初始化实例级 tick 增量渲染性能统计（仅首次访问创建，避免侵入 __init__）"""
+        stats = getattr(self, '_tick_perf_stats', None)
+        if stats is None:
+            stats = {
+                # bar 内 tick（_update_last_bar_with_tick 成功路径）
+                'bar_count': 0, 'bar_total_ms': 0.0, 'bar_max_ms': 0.0,
+                # 子阶段累计耗时（ms）：数据更新 / K 线 verts 重建 / 成交量 verts 重建 / blit
+                'stage_data_ms': 0.0, 'stage_kline_ms': 0.0,
+                'stage_volume_ms': 0.0, 'stage_blit_ms': 0.0,
+                # 聚合日志节流窗口（每 PERF_SAMPLE_EVERY 次输出并重置）
+                'agg_count': 0, 'agg_total_ms': 0.0, 'agg_max_ms': 0.0,
+                # 新 bar（跨周期，_append_new_bar 路径）
+                'newbar_count': 0, 'newbar_total_ms': 0.0, 'newbar_max_ms': 0.0,
+                # 退化全量（增量失败 → update_chart 全量重绘）
+                'fallback_count': 0,
+            }
+            self._tick_perf_stats = stats
+        return stats
+
+    def _log_tick_perf_agg(self, stats):
+        """每 PERF_SAMPLE_EVERY 次 bar 内 tick 打一条聚合日志（节流，避免高频刷屏）"""
+        n = stats['agg_count']
+        bar_cnt = stats['bar_count']
+        new_cnt = stats['newbar_count']
+        avg = stats['agg_total_ms'] / n if n else 0.0
+        new_avg = stats['newbar_total_ms'] / new_cnt if new_cnt else 0.0
+
+        def _stage_avg(key):
+            return stats[key] / bar_cnt if bar_cnt else 0.0
+
+        logger.info(
+            f"[PERF][TickIncremental] bar内tick {n}次 avg={avg:.1f}ms "
+            f"max={stats['agg_max_ms']:.1f}ms | 阶段avg: "
+            f"数据={_stage_avg('stage_data_ms'):.1f} 重建K={_stage_avg('stage_kline_ms'):.1f} "
+            f"重建V={_stage_avg('stage_volume_ms'):.1f} blit={_stage_avg('stage_blit_ms'):.1f} "
+            f"| 新bar {new_cnt}次 avg={new_avg:.1f}ms max={stats['newbar_max_ms']:.1f}ms "
+            f"| 退化全量 {stats['fallback_count']}次")
+
+    def _save_kline_collections(self, colls):
+        """保存 K 线 8-collection 引用（tuple → dict，tick 增量更新按 key 操作）"""
+        if not isinstance(colls, (tuple, list)) or len(colls) != len(self.KLINE_KEYS):
+            self._kline_collections = None
+            return
+        self._kline_collections = dict(zip(self.KLINE_KEYS, colls))
+
+    def _save_volume_collections(self, colls):
+        """保存成交量 4-collection 引用"""
+        if not isinstance(colls, (tuple, list)) or len(colls) != len(self.VOLUME_KEYS):
+            self._volume_collections = None
+            return
+        self._volume_collections = dict(zip(self.VOLUME_KEYS, colls))
+
+    def _on_tick_event(self, event):
+        """TickDataEvent 桥接：事件对象 → tick dict（ChartWidget._bind_events 订阅）"""
+        try:
+            self._handle_realtime_tick(getattr(event, 'tick_data', None))
+        except Exception as e:
+            logger.debug(f"处理 TickDataEvent 失败: {e}")
+
+    def _bar_key_of(self, dt):
+        """tick/bar 归属周期桶（新 bar 判定：tick 时间戳跨桶 → 追加新 bar）"""
+        period = str(getattr(self, 'current_period', None) or 'D')
+        freq = {'1min': '1min', '5min': '5min', '15min': '15min',
+                '30min': '30min', '60min': '1h', 'D': 'D',
+                'W': 'W'}.get(period, 'D')
+        try:
+            return pd.Timestamp(dt).floor(freq)
+        except Exception:
+            return pd.Timestamp(dt).floor('D')
+
+    def _handle_realtime_tick(self, tick):
+        """tick 增量渲染入口：symbol 过滤 + 图表类型守卫 + bar 归属判断"""
+        try:
+            if not tick or not isinstance(tick, dict):
+                return
+            symbol = tick.get('symbol')
+            current = (getattr(self, 'current_stock', None)
+                       or getattr(self, '_current_stock_code', None) or '')
+            if symbol and current and str(symbol).strip() != str(current).strip():
+                return  # symbol 不匹配：不更新
+            chart_type = getattr(self, 'chart_type', None) or 'K线图'
+            if chart_type != 'K线图':
+                return  # 仅 K线图走增量（分时图/美国线/收盘价回退现有全量路径）
+            kdata = getattr(self, 'current_kdata', None)
+            if kdata is None or kdata.empty:
+                return
+            # 新 bar（跨周期）判定
+            ts = tick.get('timestamp')
+            if ts is not None and 'datetime' in kdata.columns:
+                try:
+                    tick_bucket = self._bar_key_of(ts)
+                    last_bucket = self._bar_key_of(kdata['datetime'].iloc[-1])
+                    if tick_bucket > last_bucket:
+                        # 新 bar（跨周期）：计时 → 追加 + 全量重绘
+                        _t = time.perf_counter()
+                        self._append_new_bar(tick)
+                        elapsed_ms = (time.perf_counter() - _t) * 1000
+                        stats = self._get_tick_perf_stats()
+                        stats['newbar_count'] += 1
+                        stats['newbar_total_ms'] += elapsed_ms
+                        stats['newbar_max_ms'] = max(stats['newbar_max_ms'], elapsed_ms)
+                        return
+                except Exception:
+                    pass
+            ok = self._update_last_bar_with_tick(tick)
+            if not ok:
+                # 无法增量（如末根新类别所属集合渲染时为空）→ 退化全量，保证正确
+                stats = self._get_tick_perf_stats()
+                stats['fallback_count'] += 1
+                # HV6 修复：DataFrame 的 or 短路会触发 __bool__ 抛 ValueError
+                # （ambiguous truth value）被外层 try 吞掉，导致退化全量永不生效
+                full = getattr(self, '_full_kdata', None)
+                if full is None:
+                    full = kdata
+                self.update_chart({'kdata': full})
+        except Exception as e:
+            logger.debug(f"tick 增量更新失败: {e}")
+
+    def _update_last_bar_with_tick(self, tick):
+        """bar 内 tick：更新末根 OHLCV → set_verts 重建对应集合 → blit 快路径。
+
+        Returns:
+            True=增量成功；False=无法增量（调用方退化全量重绘）。
+        """
+        kdata = getattr(self, 'current_kdata', None)
+        colls = getattr(self, '_kline_collections', None)
+        vol_colls = getattr(self, '_volume_collections', None)
+        if kdata is None or kdata.empty or not colls or not vol_colls:
+            return False
+        # 性能统计起点（仅成功路径累计，失败/退化不计入 bar 内 tick）
+        _t0 = time.perf_counter()
+        stats = self._get_tick_perf_stats()
+        try:
+            price = float(tick.get('price'))
+        except (TypeError, ValueError):
+            return False
+        i = len(kdata) - 1
+        # HV6.2：先确保末根 overlay——必须在数据更新前拆分：主体集合仍是
+        # 更新前 verts，末根类别须按更新前数据判定，overlay 拆分才与集合
+        # 内容一致（更新后类别迁移由 _rebuild_kline_overlay 重建 overlay 完成）
+        overlay_ready = self._ensure_tick_overlay()
+        full = getattr(self, '_full_kdata', None)
+        # 降采样视图末行 == 全量末行（分桶采样 _bucket_key_indices 强制保留首尾行）；
+        # 昨收取全量倒数第二根（视图经降采样后相邻 bar 并非真实相邻交易日，用视图
+        # 昨收会导致 limit 判定基准漂移）
+        if full is not None and not full.empty and len(full) > 1:
+            prev_close = float(full['close'].iloc[-2])
+        elif i > 0:
+            prev_close = float(kdata['close'].iloc[i - 1])
+        else:
+            prev_close = float(kdata['close'].iloc[i])
+        open_ = float(kdata['open'].iloc[i])
+        old_high = float(kdata['high'].iloc[i])
+        old_low = float(kdata['low'].iloc[i])
+        old_vol = float(kdata['volume'].iloc[i])
+        new_high = max(old_high, price)
+        new_low = min(old_low, price)
+        new_vol = old_vol + max(0.0, float(tick.get('volume') or 0))
+        # 记录旧类别（更新前末根）：blit 只重画末根相关集合，类别迁移时旧+新集合都要画
+        old_close = float(kdata['close'].iloc[i])
+        old_open = float(kdata['open'].iloc[i])
+        old_lu = bool(kdata['limit_up'].iloc[i]) if 'limit_up' in kdata.columns else False
+        old_ld = bool(kdata['limit_down'].iloc[i]) if 'limit_down' in kdata.columns else False
+
+        # 1) 更新数据框（当前降采样视图 + 全量数据保持一致）
+        # HV6 修复：视图(≤1200根)与全量(5万根)不等长——分桶采样视图末根=全量末根，
+        # 但视图内位置 i ≠ 全量位置，须按各自末行位置 j=len(frame)-1 更新（原 i 会
+        # 错位更新全量第 i 行，导致全量末行永不刷新、下次全量刷新数据回退）
+        _t = time.perf_counter()
+        for frame in (kdata, full):
+            if frame is None or frame.empty:
+                continue
+            j = len(frame) - 1  # 各自末行位置（视图末行=全量末行）
+            for col, val in (('close', price), ('high', new_high),
+                             ('low', new_low), ('volume', new_vol)):
+                if col in frame.columns:
+                    frame.iat[j, frame.columns.get_loc(col)] = val
+            # limit 末行单根重判（昨收=前一根 close，is_limit_up_down 单点判定）
+            symbol = extract_symbol(frame) or getattr(self, 'current_stock', '') or ''
+            is_lu, is_ld = is_limit_up_down(prev_close, price, new_high, new_low, symbol)
+            if 'limit_up' in frame.columns:
+                frame.iat[j, frame.columns.get_loc('limit_up')] = is_lu
+            if 'limit_down' in frame.columns:
+                frame.iat[j, frame.columns.get_loc('limit_down')] = is_ld
+        stats['stage_data_ms'] += (time.perf_counter() - _t) * 1000
+
+        # 2) 重建 verts：HV6.2 优先"末根 overlay"（仅 1 根 bar）——主体集合
+        # （前 n-1 根）tick 期间永不动。draw_artist 光栅化 ∝ 顶点数，全视图
+        # 重建 + draw 是 5 万行视图下 blit 15ms 的瓶颈；overlay 不可用
+        # （单根数据/集合缺失）时回退全视图重建（向量化后 ~6ms，仍远快于全量）
+        xvals = np.arange(len(kdata))
+        _t = time.perf_counter()
+        if overlay_ready:
+            ok_kline = self._rebuild_kline_overlay(kdata)
+        else:
+            ok_kline = self._rebuild_kline_verts(kdata, xvals)
+        stats['stage_kline_ms'] += (time.perf_counter() - _t) * 1000
+        _t = time.perf_counter()
+        if overlay_ready:
+            ok_volume = self._rebuild_volume_overlay(kdata)
+        else:
+            ok_volume = self._rebuild_volume_verts(kdata, xvals)
+        stats['stage_volume_ms'] += (time.perf_counter() - _t) * 1000
+        if not ok_kline or not ok_volume:
+            return False
+
+        # 3) ylim 突破 → invalidate（背景重建），否则 blit 快路径
+        _t = time.perf_counter()
+        invalidated = False
+        if new_high > self._ymax or new_low < self._ymin:
+            self._ymax = max(self._ymax, new_high)
+            self._ymin = min(self._ymin, new_low)
+            try:
+                self.price_ax.set_ylim(self._ymin, self._ymax)
+                if hasattr(self, '_invalidate_crosshair_background'):
+                    self._invalidate_crosshair_background()
+            except Exception:
+                pass
+            invalidated = True
+
+        # 4) 统一 BlitEngine 局部重绘（复用 crosshair 引擎，铁律㊲：单 canvas 单背景管理）
+        engine = None
+        if hasattr(self, '_ensure_blit_engine'):
+            try:
+                engine = self._ensure_blit_engine()
+            except Exception:
+                engine = None
+        if engine is None:
+            engine = getattr(self, '_blit_engine', None)
+        # HV6.1 blit 范围缩小：只重画"末根相关集合"（新类别 + 迁移旧类别）——
+        # 其他集合 verts 未变（背景快照像素仍正确），全量 draw_artist 8 集合是
+        # 5 万行视图下 blit 20ms 的瓶颈，缩小后仅 2~4 集合（Agg 光栅化 ∝ 顶点数）
+        def _cat_keys(lu_f, ld_f, close_v, open_v):
+            if lu_f:
+                return ('limit_up', 'shadow_limit_up')
+            if ld_f:
+                return ('limit_down', 'shadow_limit_down')
+            return ('up', 'shadow_up') if close_v >= open_v else ('down', 'shadow_down')
+
+        new_lu = bool(kdata['limit_up'].iloc[i]) if 'limit_up' in kdata.columns else False
+        new_ld = bool(kdata['limit_down'].iloc[i]) if 'limit_down' in kdata.columns else False
+        k_keys = set(_cat_keys(new_lu, new_ld, price, open_)) | \
+                 set(_cat_keys(old_lu, old_ld, old_close, old_open))
+        # HV6.2：draw 对象取末根 overlay（每集合仅 1 根 bar → 光栅化 <1ms）；
+        # overlay 不可用时回退主体集合（前 n-1 根 + 末根，数百根，光栅化 ~15ms）
+        if overlay_ready:
+            artists = ([self._kline_overlay[k] for k in k_keys
+                        if self._kline_overlay.get(k) is not None]
+                       + [self._volume_overlay[k] for k in k_keys
+                          if self._volume_overlay.get(k) is not None])
+        else:
+            artists = ([colls[k] for k in k_keys if colls.get(k) is not None]
+                       + [vol_colls[k] for k in k_keys if vol_colls.get(k) is not None])
+        if engine is not None:
+            try:
+                # 背景将重建（首次/失效后）时先隐藏十字线，保证快照不含十字线残影
+                # （与 crosshair_mixin._blit_crosshair 预处理一致，铁律㊲ 单背景管理）
+                if not engine.background_cached and hasattr(self, '_hide_crosshair_elements'):
+                    self._hide_crosshair_elements()
+                ok = engine.render(artists)
+                if ok:
+                    # 同步背景快照为最新 K 线像素：否则鼠标移动（十字光标 blit）
+                    # 会 restore 回 tick 前的旧快照，bar 内 tick 更新像素级回退
+                    if hasattr(engine, 'refresh_background'):
+                        engine.refresh_background()
+                elif hasattr(self, 'canvas'):
+                    self.canvas.draw_idle()
+            except Exception:
+                if hasattr(self, 'canvas'):
+                    self.canvas.draw_idle()
+        elif hasattr(self, 'canvas') and self.canvas:
+            self.canvas.draw_idle()
+        stats['stage_blit_ms'] += (time.perf_counter() - _t) * 1000
+
+        # 5) 性能统计累计：bar 内 tick 计数/耗时 + 慢 tick 告警 + 聚合日志节流
+        elapsed_ms = (time.perf_counter() - _t0) * 1000
+        stats['bar_count'] += 1
+        stats['bar_total_ms'] += elapsed_ms
+        stats['bar_max_ms'] = max(stats['bar_max_ms'], elapsed_ms)
+        stats['agg_count'] += 1
+        stats['agg_total_ms'] += elapsed_ms
+        stats['agg_max_ms'] = max(stats['agg_max_ms'], elapsed_ms)
+        if elapsed_ms > self.SLOW_TICK_MS:
+            logger.warning(
+                f"[PERF][TickIncremental] 慢tick: bar内tick单次耗时 {elapsed_ms:.1f}ms "
+                f"超阈值 {self.SLOW_TICK_MS:.1f}ms (累计{stats['bar_count']}次)")
+        if stats['agg_count'] >= self.PERF_SAMPLE_EVERY:
+            self._log_tick_perf_agg(stats)
+            stats['agg_count'] = 0
+            stats['agg_total_ms'] = 0.0
+            stats['agg_max_ms'] = 0.0
+        return True
+
+    # ============================================================
+    # HV6.2 末根 overlay：主体集合（前 n-1 根）与末根分离，tick 只重建+draw
+    # overlay（1 根 bar）——draw_artist 光栅化 ∝ 顶点数，全视图重建 + draw
+    # 是 5 万行视图下 blit 15ms 的瓶颈，overlay 方案降至 <1ms 级。
+    # ============================================================
+    def _ensure_tick_overlay(self) -> bool:
+        """确保末根 overlay 集合可用：已存在直接返回 True，否则惰性初始化。
+
+        Returns:
+            True=overlay 可用；False=初始化失败（非 K线图/集合缺失/数据过短），
+            调用方（tick 路径）回退全视图重建 _rebuild_kline_verts。
+        """
+        if getattr(self, '_kline_overlay', None) and getattr(self, '_volume_overlay', None):
+            return True
+        return self._setup_tick_overlay()
+
+    def _setup_tick_overlay(self) -> bool:
+        """末根 overlay 初始化：从主体集合拆出末根 verts/segments。
+
+        - 主体集合（8 K线 + 4 成交量）set_verts 前 n-1 根（tick 期间永不动）；
+        - 末根归入新建 overlay 集合（仅 1 根 bar，复制主体样式，后 add 覆盖绘制）；
+        - update_chart 全量重绘后必须重新调用（ax.clear 已移除旧集合）。
+
+        Returns:
+            True=拆分成功；False=条件不满足（单根数据/集合缺失/ax 缺失）。
+        """
+        colls = getattr(self, '_kline_collections', None)
+        vol_colls = getattr(self, '_volume_collections', None)
+        kdata = getattr(self, 'current_kdata', None)
+        if kdata is None or kdata.empty or not colls or not vol_colls:
+            return False
+        if len(kdata) < 2:
+            # 单根数据：主体为空，overlay 无意义，tick 走全视图重建（成本可忽略）
+            return False
+        price_ax = getattr(self, 'price_ax', None)
+        volume_ax = getattr(self, 'volume_ax', None)
+        if price_ax is None or volume_ax is None:
+            return False
+        try:
+            # 末根类别判定（列优先，与渲染链同规则）
+            i = len(kdata) - 1
+            lu = bool(kdata['limit_up'].iloc[i]) if 'limit_up' in kdata.columns else False
+            ld = bool(kdata['limit_down'].iloc[i]) if 'limit_down' in kdata.columns else False
+            up = (not lu and not ld
+                  and kdata['close'].iloc[i] >= kdata['open'].iloc[i])
+            down = not lu and not ld and not up
+
+            kline_overlay = {}
+            for key, is_last in (('up', up), ('down', down),
+                                 ('limit_up', lu), ('limit_down', ld)):
+                src = colls.get(key)
+                src_shadow = colls.get('shadow_' + key)
+                # 柱：主体去掉末根（verts[:-1]），末根归 overlay（verts[-1:]）。
+                # PolyCollection 无 get_verts()，从 get_paths() 的 Path.vertices 恢复；
+                # matplotlib 闭合 Path 首点重复（4 顶点 → Path 5 顶点），恢复时去重。
+                # 注意：body 为 (0,4,2) 空数组（类别只含末根 1 根，如连续下跌后拉红）
+                # 也必须 set_verts 清空主体——否则主体残留末根，tick 迁移类别时主体
+                # 不在 blit 范围，旧末根成为不可清除的残影（HV6.2 边界修复）。
+                body_verts = None
+                last_verts = None
+                if src is not None:
+                    paths = src.get_paths()
+                    if len(paths) > 0:
+                        verts = np.array([p.vertices for p in paths])
+                        if verts.ndim == 3 and verts.shape[1] == 5:
+                            verts = verts[:, :-1, :]
+                        if is_last:
+                            body_verts = verts[:-1]
+                            last_verts = verts[-1:]
+                        else:
+                            body_verts = verts
+                if body_verts is not None:
+                    src.set_verts(body_verts)
+                # 影线：segments 同理
+                body_segs = None
+                last_segs = None
+                if src_shadow is not None:
+                    segs = src_shadow.get_segments()
+                    if len(segs) > 0:
+                        if is_last:
+                            body_segs = segs[:-1]
+                            last_segs = segs[-1:]
+                        else:
+                            body_segs = segs
+                if body_segs is not None:
+                    src_shadow.set_segments(body_segs)
+                # overlay 集合（仅末根）：复制主体样式，add 到 ax（后 add 覆盖绘制）
+                ov = self._new_overlay_collection(src, last_verts, shadow=False)
+                ov_shadow = self._new_overlay_collection(src_shadow, last_segs, shadow=True)
+                if ov is not None:
+                    price_ax.add_collection(ov)
+                if ov_shadow is not None:
+                    price_ax.add_collection(ov_shadow)
+                kline_overlay[key] = ov
+                kline_overlay['shadow_' + key] = ov_shadow
+
+            volume_overlay = {}
+            for key, is_last in (('up', up), ('down', down),
+                                 ('limit_up', lu), ('limit_down', ld)):
+                src = vol_colls.get(key)
+                body_verts = None
+                last_verts = None
+                if src is not None:
+                    paths = src.get_paths()
+                    if len(paths) > 0:
+                        verts = np.array([p.vertices for p in paths])
+                        if verts.ndim == 3 and verts.shape[1] == 5:
+                            verts = verts[:, :-1, :]
+                        if is_last:
+                            body_verts = verts[:-1]
+                            last_verts = verts[-1:]
+                        else:
+                            body_verts = verts
+                if body_verts is not None:
+                    src.set_verts(body_verts)
+                ov = self._new_overlay_collection(src, last_verts, shadow=False)
+                if ov is not None:
+                    volume_ax.add_collection(ov)
+                volume_overlay[key] = ov
+
+            self._kline_overlay = kline_overlay
+            self._volume_overlay = volume_overlay
+            return True
+        except Exception as e:
+            logger.debug(f"末根 overlay 初始化失败，回退全视图重建: {e}")
+            self._kline_overlay = None
+            self._volume_overlay = None
+            return False
+
+    @staticmethod
+    def _new_overlay_collection(src, verts, shadow=False):
+        """从主体集合复制样式创建 overlay 集合。
+
+        verts 为 None（末根不属于该类别）时创建空集合 ((0,4,2)/(0,2,2))——
+        必须为全部类别都建集合，tick 类别迁移时可 set_verts 到任意类别；
+        src 为 None（视图无该类别柱，末根必然也不属于它）时用中性默认样式，
+        该集合永不可见，样式无关紧要。
+        """
+        from matplotlib.collections import PolyCollection, LineCollection
+        if verts is None:
+            verts = np.empty((0, 4, 2) if not shadow else (0, 2, 2))
+        try:
+            if shadow:
+                colors = src.get_color() if src is not None else '#888888'
+                lw = src.get_linewidth() if src is not None else 1.0
+                alpha = src.get_alpha() if src is not None else 1.0
+                zorder = src.get_zorder() if src is not None else 1
+                return LineCollection(
+                    verts, colors=colors, linewidth=lw, alpha=alpha, zorder=zorder)
+            face = src.get_facecolor() if src is not None else 'none'
+            edge = src.get_edgecolor() if src is not None else '#888888'
+            lw = src.get_linewidth() if src is not None else 1.0
+            alpha = src.get_alpha() if src is not None else 1.0
+            zorder = src.get_zorder() if src is not None else 1
+            return PolyCollection(
+                verts, facecolor=face, edgecolor=edge,
+                linewidth=lw, alpha=alpha, zorder=zorder)
+        except Exception:
+            return None
+
+    def _rebuild_kline_overlay(self, kdata) -> bool:
+        """只重建末根 K 线 overlay 集合 verts（1 根 bar，替代全视图重建）。
+
+        Returns:
+            True=成功；False=overlay 缺失/重建失败（调用方已回退或退化全量）。
+        """
+        overlay = getattr(self, '_kline_overlay', None)
+        renderer = getattr(self, 'renderer', None)
+        if not overlay or renderer is None or not hasattr(renderer, 'build_candle_groups'):
+            return False
+        i = len(kdata) - 1
+        lu = (np.array([bool(kdata['limit_up'].iloc[i])])
+              if 'limit_up' in kdata.columns else np.array([False]))
+        ld = (np.array([bool(kdata['limit_down'].iloc[i])])
+              if 'limit_down' in kdata.columns else np.array([False]))
+        try:
+            (vu, vd, vlu, vld, su, sd, slu, sld) = renderer.build_candle_groups(
+                kdata.iloc[[i]], np.array([float(i)]), lu, ld)
+        except Exception:
+            return False
+        for key, verts in (('up', vu), ('down', vd),
+                           ('limit_up', vlu), ('limit_down', vld)):
+            coll = overlay.get(key)
+            if coll is not None:
+                coll.set_verts(verts)
+        for key, segs in (('shadow_up', su), ('shadow_down', sd),
+                          ('shadow_limit_up', slu), ('shadow_limit_down', sld)):
+            coll = overlay.get(key)
+            if coll is not None:
+                coll.set_segments(segs)
+        return True
+
+    def _rebuild_volume_overlay(self, kdata) -> bool:
+        """只重建末根成交量 overlay 集合 verts（1 根 bar）"""
+        overlay = getattr(self, '_volume_overlay', None)
+        renderer = getattr(self, 'renderer', None)
+        if not overlay or renderer is None or not hasattr(renderer, 'build_volume_groups'):
+            return False
+        i = len(kdata) - 1
+        try:
+            (vu, vd, vlu, vld) = renderer.build_volume_groups(
+                kdata.iloc[[i]], np.array([float(i)]))
+        except Exception:
+            return False
+        for key, verts in (('up', vu), ('down', vd),
+                           ('limit_up', vlu), ('limit_down', vld)):
+            coll = overlay.get(key)
+            if coll is not None:
+                coll.set_verts(verts)
+        return True
+
+    def _rebuild_kline_verts(self, kdata, xvals) -> bool:
+        """按当前 kdata 重建 K 线 8 集合 verts/segments（set_verts/set_segments）"""
+        colls = getattr(self, '_kline_collections', None)
+        renderer = getattr(self, 'renderer', None)
+        if not colls or renderer is None or not hasattr(renderer, 'build_candle_groups'):
+            return False
+        lu = (kdata['limit_up'].to_numpy(dtype=bool)
+              if 'limit_up' in kdata.columns else np.zeros(len(kdata), dtype=bool))
+        ld = (kdata['limit_down'].to_numpy(dtype=bool)
+              if 'limit_down' in kdata.columns else np.zeros(len(kdata), dtype=bool))
+        try:
+            (vu, vd, vlu, vld, su, sd, slu, sld) = renderer.build_candle_groups(kdata, xvals, lu, ld)
+        except Exception:
+            return False
+        for key, verts in (('up', vu), ('down', vd),
+                           ('limit_up', vlu), ('limit_down', vld)):
+            coll = colls.get(key)
+            if coll is not None:
+                coll.set_verts(verts)
+        for key, segs in (('shadow_up', su), ('shadow_down', sd),
+                          ('shadow_limit_up', slu), ('shadow_limit_down', sld)):
+            coll = colls.get(key)
+            if coll is not None:
+                coll.set_segments(segs)
+        return True
+
+    def _rebuild_volume_verts(self, kdata, xvals) -> bool:
+        """按当前 kdata 重建成交量 4 集合 verts"""
+        colls = getattr(self, '_volume_collections', None)
+        renderer = getattr(self, 'renderer', None)
+        if not colls or renderer is None or not hasattr(renderer, 'build_volume_groups'):
+            return False
+        try:
+            (vu, vd, vlu, vld) = renderer.build_volume_groups(kdata, xvals)
+        except Exception:
+            return False
+        for key, verts in (('up', vu), ('down', vd),
+                           ('limit_up', vlu), ('limit_down', vld)):
+            coll = colls.get(key)
+            if coll is not None:
+                coll.set_verts(verts)
+        return True
+
+    def _append_new_bar(self, tick):
+        """新 bar（跨周期）：追加到全量数据 → update_chart 全量重绘。
+        x 轴右移/指标/xticks 需整体刷新，一次性背景重建后分钟级 tick 免费。"""
+        try:
+            full = getattr(self, '_full_kdata', None)
+            if full is None:
+                return
+            price = float(tick.get('price'))
+            ts = tick.get('timestamp')
+            vol = float(tick.get('volume') or 0)
+            new_row = {'open': price, 'high': price, 'low': price,
+                       'close': price, 'volume': vol}
+            if ts is not None:
+                new_row['datetime'] = pd.to_datetime(ts)
+            if 'limit_up' in full.columns:
+                new_row['limit_up'] = False
+                new_row['limit_down'] = False
+            self._full_kdata = pd.concat(
+                [full, pd.DataFrame([new_row])], ignore_index=True)
+            self.update_chart({'kdata': self._full_kdata})
+        except Exception as e:
+            logger.debug(f"追加新 bar 失败: {e}")
+
     def clear_performance_cache(self):
         """清除性能优化缓存"""
         self._performance_optimizer.clear_cache()
@@ -607,6 +1287,8 @@ class RenderingMixin:
                 'axis_color': processed_colors.get('chart_grid', '#e0e0e0'),
                 'label_color': processed_colors.get('chart_text', '#222b45'),
                 'border_color': processed_colors.get('chart_grid', '#e0e0e0'),
+                # V-04: 分时均价线颜色（主题键 avg_line，缺省黄色，向后兼容）
+                'avg_color': processed_colors.get('avg_line', '#ffd700'),
             }
         except Exception as e:
             logger.error(f"获取图表样式失败: {str(e)}")
@@ -766,6 +1448,9 @@ class RenderingMixin:
 
             # 重新绘制
             self.canvas.draw()
+            # HV6：全量重绘后失效 blit 背景（否则十字光标 restore 复活已清空内容）
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
 
         except Exception as e:
             logger.error(f"清空图表失败: {str(e)}")
@@ -812,6 +1497,9 @@ class RenderingMixin:
                 ax.yaxis.label.set_color(text_color)
 
             self.canvas.draw()
+            # HV6：主题改色后背景快照过期（否则鼠标移动 restore 回旧主题色）
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
 
         except Exception as e:
             logger.error(f"应用主题失败: {str(e)}")
@@ -887,6 +1575,9 @@ class RenderingMixin:
                 safe_figure_layout(self.figure)
 
                 self.canvas.draw()
+                # HV6：figure.clear() 重建子图，背景必须失效
+                if hasattr(self, '_invalidate_crosshair_background'):
+                    self._invalidate_crosshair_background()
 
                 # 统一字体大小（全部设为8号）
                 for ax in [self.price_ax, self.volume_ax]:
@@ -934,66 +1625,3 @@ class RenderingMixin:
 
         except Exception as e:
             logger.error(f"处理指标变更失败: {str(e)}")
-
-    def _optimize_display(self):
-        """优化显示效果，所有坐标轴字体统一为8号，始终显示网格和XY轴刻度（任何操作都不隐藏）"""
-        try:
-
-            start_time = time.time()
-
-            # 确保所有子图都有网格和刻度
-            for ax in [self.price_ax, self.volume_ax, self.indicator_ax]:
-                if not ax:
-                    continue
-
-                # 获取主题颜色
-                colors = self.theme_manager.get_theme_colors()
-                grid_color = parse_color_for_matplotlib(colors.get('chart_grid', '#e0e0e0'))
-                text_color = parse_color_for_matplotlib(colors.get('chart_text', '#222b45'))
-
-                # 设置网格
-                ax.grid(True, linestyle='--', alpha=0.3, color=grid_color)
-
-                # 设置刻度样式
-                ax.tick_params(axis='both', which='major',
-                               labelsize=8, colors=text_color)
-                ax.tick_params(axis='y', which='major', labelleft=True)
-
-                # 设置所有文本字体大小
-                for label in (ax.get_yticklabels()):
-                    label.set_fontsize(8)
-                    label.set_color(text_color)
-
-                # 设置标题和标签字体
-                if ax.get_title():
-                    ax.title.set_fontsize(8)
-                    ax.title.set_color(text_color)
-                ax.xaxis.label.set_fontsize(8)
-                ax.xaxis.label.set_color(text_color)
-                ax.yaxis.label.set_fontsize(8)
-                ax.yaxis.label.set_color(text_color)
-
-            # 只设置indicator_ax的X轴刻度样式，其他子图隐藏X轴
-            if self.price_ax:
-                self.price_ax.set_xticklabels([])
-                self.price_ax.tick_params(
-                    axis='x', which='both', bottom=False, top=False, labelbottom=False)
-
-            if self.volume_ax and self.volume_ax != self.indicator_ax:
-                self.volume_ax.set_xticklabels([])
-                self.volume_ax.tick_params(
-                    axis='x', which='both', bottom=False, top=False, labelbottom=False)
-
-            if self.indicator_ax:
-                self.indicator_ax.tick_params(
-                    axis='x', which='major', labelsize=8, labelbottom=True, colors=text_color)
-                for label in self.indicator_ax.get_xticklabels():
-                    label.set_fontsize(8)
-                    label.set_color(text_color)
-                    label.set_rotation(30)
-
-            render_time = (time.time() - start_time) * 1000  # 转换为毫秒
-            logger.info(f"_optimize_display，耗时: {render_time:.2f}ms")
-
-        except Exception as e:
-            logger.error(f"优化显示失败: {str(e)}")

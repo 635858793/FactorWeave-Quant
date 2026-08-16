@@ -110,10 +110,17 @@ class VolumeVirtualRenderer(BaseVirtualRenderer):
         categories = np.where(closes >= opens, 1, 0).astype(np.int8)
         if 'high' in data.columns and 'low' in data.columns:
             from core.rendering.limit_price import classify_limit_up_down, extract_symbol
-            highs = data['high'].values.astype(np.float64)
-            lows = data['low'].values.astype(np.float64)
-            is_limit_up, is_limit_down = classify_limit_up_down(
-                closes, highs, lows, extract_symbol(data))
+            # R292-HV：列优先读取 limit 掩码（与 optimization/chart_renderer.py
+            # K线/成交量一致）。'limit_up'/'limit_down' 列由上游在降采样前按全量数据
+            # 计算并随切片保留；降采样后重判的"昨收"会错位导致与K线颜色不一致。
+            if 'limit_up' in data.columns and 'limit_down' in data.columns:
+                is_limit_up = data['limit_up'].to_numpy(dtype=bool)
+                is_limit_down = data['limit_down'].to_numpy(dtype=bool)
+            else:
+                highs = data['high'].values.astype(np.float64)
+                lows = data['low'].values.astype(np.float64)
+                is_limit_up, is_limit_down = classify_limit_up_down(
+                    closes, highs, lows, extract_symbol(data))
             # 优先级：涨停 → limit_up_color、跌停 → limit_down_color，与 K 线一致
             categories = np.where(is_limit_down, 3, np.where(is_limit_up, 2, categories))
         return categories

@@ -1019,6 +1019,9 @@ class SignalMixin:
 
             if not signals:
                 self.canvas.draw_idle()
+                # HV6：清空旧信号后背景快照已过时
+                if hasattr(self, '_invalidate_crosshair_background'):
+                    self._invalidate_crosshair_background()
                 return
 
             # 获取当前可见区间
@@ -1053,6 +1056,9 @@ class SignalMixin:
 
             # 更新画布
             self.canvas.draw_idle()
+            # HV6：新信号绘制后背景快照过时（否则鼠标移动 restore 擦除信号标记）
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
 
         except Exception as e:
             logger.error(f"绘制信号失败: {str(e)}")
@@ -1560,6 +1566,9 @@ class SignalMixin:
                 self._highlight_artists.append(highlight_circle)
 
             self.canvas.draw_idle()
+            # HV6：高亮后背景快照过时（否则鼠标移动 restore 擦除高亮圆圈）
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
 
         except Exception as e:
             logger.error(f"高亮信号失败: {str(e)}")
@@ -1584,6 +1593,9 @@ class SignalMixin:
             self._tooltip_artists = []
 
             self.canvas.draw_idle()
+            # HV6：清除高亮后背景快照过时
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
 
         except Exception as e:
             logger.error(f"清除信号高亮失败: {str(e)}")
@@ -1685,3 +1697,6 @@ class SignalMixin:
         # 刷新图表
         if hasattr(self, 'canvas'):
             self.canvas.draw_idle()
+            # HV6：形态绘制后背景快照过时
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()

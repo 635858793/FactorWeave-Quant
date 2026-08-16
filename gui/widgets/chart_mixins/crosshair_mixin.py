@@ -18,6 +18,9 @@ import pandas as pd
 from optimization.update_throttler import get_update_throttler
 # R292 涨跌停精确判定（按板块计算涨/跌停价，与 K 线渲染各路径一致）
 from core.rendering.limit_price import is_limit_up_down, extract_symbol
+# R292-HV5 统一 blit：十字光标局部重绘委托 BlitEngine（单一 blit 实现，
+# 消除 R265 自建 blit 与 BlitEngine 双背景快照互踩冲突）
+from core.utils.mpl_blit import BlitEngine
 
 class CrosshairMixin:
     """十字光标功能Mixin
@@ -37,11 +40,9 @@ class CrosshairMixin:
         self._last_crosshair_update_time = 0
         self._crosshair_event_id = None  # 存储事件连接ID，避免重复绑定
         self._crosshair_initialized = False  # 跟踪十字光标是否已初始化
-        self._blit_background = None  # R265: 十字光标blit局部重绘背景缓存（None=需重建）
-        # R266: blit性能采样（每60次移动打一次均值日志，验证R265局部重绘加速效果）
-        self._blit_perf_count = 0
-        self._blit_perf_total = 0.0
-        self._blit_perf_max = 0.0
+        # R292-HV5 统一 blit：十字光标局部重绘由 BlitEngine 承担（惰性创建），
+        # 删除 R265 自建 _blit_background 与 R266 自建性能采样（BlitEngine 内置）
+        self._blit_engine = None
 
         # 获取节流器实例
         self.throttler = get_update_throttler()
@@ -144,8 +145,9 @@ class CrosshairMixin:
     def _create_crosshair_info_text(self, row, idx: int, kdata) -> Tuple[str, str]:
         """创建十字光标信息文本 - 集成信号提示"""
         try:
-            # 获取日期字符串
-            date_str = self._safe_format_date(row, idx, kdata)
+            # 获取日期字符串（R293-G1: 传周期标记，分钟数据输出时刻）
+            date_str = self._safe_format_date(
+                row, idx, kdata, getattr(self, 'current_period', None))
 
             # 计算涨跌幅
             is_limit_up = False
@@ -389,7 +391,9 @@ class CrosshairMixin:
                 logger.info("初始化_crosshair_ytext属性")
 
             # X轴标签（日期）——画在最底部子图（indicator_ax，指标窗）（R283: 3轴布局）
-            date_str = self._safe_format_date(row, idx, kdata)
+            # R293-G1: 传周期标记，分钟数据输出时刻
+            date_str = self._safe_format_date(
+                row, idx, kdata, getattr(self, 'current_period', None))
             x_ax = self.indicator_ax
             if x_ax is not None:
                 if self._crosshair_xtext is None:
@@ -510,71 +514,47 @@ class CrosshairMixin:
             self._invalidate_crosshair_background()
 
     def _invalidate_crosshair_background(self):
-        """使十字光标blit背景失效（任何全量重绘后必须调用，否则恢复错位背景）"""
-        self._blit_background = None
+        """使十字光标blit背景失效（任何全量重绘后必须调用，否则恢复错位背景）。
+
+        R292-HV5 统一 blit：委托 BlitEngine.invalidate()；接口名保留（zoom/
+        signal/rendering/interaction 各 mixin 的全量重绘钩子均调用本方法）。
+        """
+        engine = getattr(self, '_blit_engine', None)
+        if engine is not None:
+            engine.invalidate()
+
+    def _ensure_blit_engine(self) -> BlitEngine:
+        """惰性创建/复用统一 BlitEngine（canvas 变更时重建，bbox 闭包绑定当前 canvas）"""
+        if getattr(self, '_blit_engine', None) is None or self._blit_engine.canvas is not self.canvas:
+            self._blit_engine = BlitEngine(self.canvas, log_tag='[Crosshair]', sample_every=60)
+        return self._blit_engine
+
+    def _visible_crosshair_artists(self) -> list:
+        """当前十字光标 artist 列表（可见性过滤由 BlitEngine.render 统一处理）"""
+        artists = [line for line in self._crosshair_lines.values() if line is not None]
+        artists += [a for a in (self._crosshair_text, self._crosshair_xtext,
+                                self._crosshair_ytext) if a is not None]
+        return artists
 
     def _blit_crosshair(self) -> bool:
-        """十字光标局部重绘（blit）：仅重绘十字光标相关artist，避免每帧全画布draw_idle
+        """十字光标局部重绘（blit）：委托统一 BlitEngine，仅重绘十字光标相关artist
 
         R265 性能修复：原实现每次鼠标移动都 canvas.draw_idle() 全画布重绘，
         重绘成本 ∝ 画布artist数量（K线+指标线+MACD柱状图），指标越多越卡。
         blit 方案：先缓存一次干净背景，之后 restore_region + draw_artist 只重绘
         十字线条/文本，性能提升一个数量级。失败时自动回退 draw_idle。
 
-        R266 性能日志：blit 路径逐帧采样（每60次打均值/最大耗时日志）；
-        背景重建（全画布 draw+copy）与回退 draw_idle 打单次耗时，用于对比验证加速效果。
+        R292-HV5 统一：背景缓存/restore/blit/失败回退/性能采样全部由 BlitEngine
+        承担（消除自建实现与 BlitEngine 双背景快照互踩）；仅保留"背景重建前隐藏
+        十字元素"这一十字光标场景专属预处理，保证背景快照不含十字线。
         """
-        _t_start = time.perf_counter()
-        try:
-            if self.canvas is None or self.figure is None:
-                return False
-            if self._blit_background is None:
-                # 建立干净背景：隐藏十字元素 → draw → copy（背景不含十字线）
-                self._hide_crosshair_elements()
-                self.canvas.draw()
-                self._blit_background = self.canvas.copy_from_bbox(self.figure.bbox)
-                _bg_ms = (time.perf_counter() - _t_start) * 1000
-                logger.info(
-                    f"[PERF][Crosshair] blit背景重建(全画布draw+copy): {_bg_ms:.2f}ms "
-                    f"— 仅首次/全量重绘后发生，对比每帧blit局部重绘通常<1ms")
-            self.canvas.restore_region(self._blit_background)
-            for line in self._crosshair_lines.values():
-                if line is not None and line.get_visible() and line.axes is not None:
-                    line.axes.draw_artist(line)
-            for artist in [self._crosshair_text, self._crosshair_xtext, self._crosshair_ytext]:
-                if artist is not None and artist.get_visible() and artist.axes is not None:
-                    artist.axes.draw_artist(artist)
-            self.canvas.blit(self.figure.bbox)
-            self._accumulate_blit_perf(time.perf_counter() - _t_start)
-            return True
-        except Exception as e:
-            logger.debug(f"十字光标blit重绘失败，回退draw_idle: {e}")
-            self._blit_background = None
-            _t_fb = time.perf_counter()
-            try:
-                self.canvas.draw_idle()
-            except Exception:
-                pass
-            _fb_ms = (time.perf_counter() - _t_fb) * 1000
-            logger.warning(
-                f"[PERF][Crosshair] blit失败回退全画布draw_idle: {_fb_ms:.2f}ms")
+        if self.canvas is None or self.figure is None:
             return False
-
-    def _accumulate_blit_perf(self, elapsed: float):
-        """累计blit耗时采样，每60次移动输出一次均值/最大值日志（避免每帧刷屏干扰性能）"""
-        self._blit_perf_count = getattr(self, '_blit_perf_count', 0) + 1
-        self._blit_perf_total = getattr(self, '_blit_perf_total', 0.0) + elapsed
-        self._blit_perf_max = max(getattr(self, '_blit_perf_max', 0.0), elapsed)
-        if self._blit_perf_count >= 60:
-            avg_ms = (self._blit_perf_total / self._blit_perf_count) * 1000
-            max_ms = self._blit_perf_max * 1000
-            logger.info(
-                f"[PERF][Crosshair] blit局部重绘: 最近60次移动 "
-                f"avg={avg_ms:.3f}ms max={max_ms:.3f}ms "
-                f"(全画布draw_idle通常数十~数百ms，指标/K线越多差异越大，验证R265加速生效)")
-            self._blit_perf_count = 0
-            self._blit_perf_total = 0.0
-            self._blit_perf_max = 0.0
+        engine = self._ensure_blit_engine()
+        # 背景将重建时先隐藏十字元素（保证背景快照不含十字线，restore 后无旧线残留）
+        if not engine.background_cached:
+            self._hide_crosshair_elements()
+        return engine.render(self._visible_crosshair_artists())
 
     def _create_unified_crosshair_handler(self):
         """创建统一的十字光标处理器 - 避免重复绑定"""
@@ -599,11 +579,13 @@ class CrosshairMixin:
                     len(self.current_kdata) == 0 or
                         event.xdata is None):
                     self._hide_crosshair_elements()
-                    # R265: blit局部重绘（背景已缓存时无需全画布draw）
-                    if self._blit_background is None:
-                        self.canvas.draw_idle()
-                    else:
+                    # R292-HV5: 统一 BlitEngine——背景已缓存时 blit 清十字（restore 干净背景），
+                    # 未缓存则 draw_idle 快路径（十字已隐藏、画面已最新）
+                    engine = getattr(self, '_blit_engine', None)
+                    if engine is not None and engine.background_cached:
                         self._blit_crosshair()
+                    else:
+                        self.canvas.draw_idle()
                     return
 
                 # 获取数据
@@ -625,7 +607,7 @@ class CrosshairMixin:
                 # 更新轴标签
                 self._update_crosshair_axis_labels(row, idx, kdata, x_val, y_val, primary_color)
 
-                # R265 性能：使用blit局部重绘，避免每帧全画布draw_idle
+                # R292-HV5: 统一 BlitEngine 局部重绘，失败回退全画布 draw_idle
                 if not self._blit_crosshair():
                     self.canvas.draw_idle()
 

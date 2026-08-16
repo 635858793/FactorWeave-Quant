@@ -64,7 +64,6 @@ ind_mod = _load_module('indicator_mixin_mod', 'indicator_mixin.py')
 
 from core.rendering.limit_price import classify_limit_up_down, extract_symbol  # noqa: E402
 from optimization.chart_renderer import ChartRenderer  # noqa: E402
-from core.webgpu.webgpu_renderer import WebGPURenderer  # noqa: E402
 
 STYLE = {
     'up_color': '#e74c3c', 'down_color': '#27ae60',
@@ -162,30 +161,31 @@ def _full_limits(df):
 
 class TestLimitMaskBeforeDownsample:
     def test_large_data_limit_columns_preserved_consistent(self):
-        """>1200 条：降采样后 limit 列与全量判定的同位置切片完全一致"""
+        """>1200 条：分桶采样后 limit 列随行保留，值与全量同索引行一致"""
         w = _make_widget()
         w.update_chart({'kdata': make_kdata(1500)})
         cur = w.current_kdata
         full = w._full_kdata
         assert 'limit_up' in cur.columns and 'limit_down' in cur.columns
-        assert len(cur) == 1200
+        assert len(cur) <= 1200
+        # 分桶代表性行选择不重判：每行 limit 值 = 全量同索引行（铁律⑲/㉑）
+        idx = cur.index.to_numpy()
         lu, ld = _full_limits(full)
-        idx = np.linspace(0, len(full) - 1, 1200).astype(int)
-        assert (cur['limit_up'].to_numpy() == lu[idx[:len(cur)]]).all()
-        assert (cur['limit_down'].to_numpy() == ld[idx[:len(cur)]]).all()
+        assert (cur['limit_up'].to_numpy() == lu[idx]).all()
+        assert (cur['limit_down'].to_numpy() == ld[idx]).all()
+        assert cur['limit_up'].sum() >= 1 and cur['limit_down'].sum() >= 1
 
     def test_large_data_hits_four_color(self):
-        """>1200 条降采样后仍命中涨停橙/跌停紫（修复前：昨收错位导致漏判）"""
+        """>1200 条分桶采样后仍命中涨停橙/跌停紫（HV4：涨跌停行必被保留）"""
         w = _make_widget()
         w.update_chart({'kdata': make_kdata(1500)})
         cur = w.current_kdata
         assert cur['limit_up'].sum() >= 1
         assert cur['limit_down'].sum() >= 1
-        # linspace 采样尾部 index：1493/1495/1496/1497/1499（1498 步长跳变丢失）
-        # → iloc[-3]=1496 涨停 / iloc[-2]=1497 跌停 / iloc[-1]=1499 跌停
-        assert cur['limit_up'].iloc[-3]
-        assert cur['limit_down'].iloc[-2]
-        assert cur['limit_down'].iloc[-1]
+        # 分桶"涨跌停优先"规则：尾部确定性涨跌停 bar（1496/1497/1498）必被保留
+        idx_set = set(cur.index.tolist())
+        assert 1496 in idx_set, f'涨停 bar 1496 应被保留: {sorted(idx_set)[-8:]}'
+        assert 1497 in idx_set, f'跌停 bar 1497 应被保留: {sorted(idx_set)[-8:]}'
 
     def test_small_data_limit_columns(self):
         """≤1200 条（不降采样）：limit 列同样存在且判定正确"""
@@ -209,8 +209,8 @@ class TestLimitMaskBeforeDownsample:
                           side_effect=AssertionError('数据已带limit列，不应重算')) as m:
             w.update_chart({'kdata': df})
         assert not m.called
-        idx = np.linspace(0, len(df) - 1, 1200).astype(int)
-        assert (w.current_kdata['limit_up'].to_numpy() == lu[idx[:len(w.current_kdata)]]).all()
+        idx = w.current_kdata.index.to_numpy()
+        assert (w.current_kdata['limit_up'].to_numpy() == lu[idx]).all()
 
     def test_rerender_reuses_existing_columns(self):
         """重渲染（_full_kdata 已带 limit 列）：直接复用不重算"""
@@ -286,7 +286,9 @@ def _line_colors(ax):
 
 
 class TestRenderColumnPriority:
-    """数据带 limit 列时，传统K线 / WebGPU GPU / CPU降级路径跳过内部重判"""
+    """数据带 limit 列时，K 线渲染路径跳过内部重判
+    （WebGPU 假实现已删除，原 WebGPURenderer GPU/CPU-fallback 列优先用例
+    迁移至 optimization/chart_renderer.py _render_candlesticks_efficient）"""
 
     def test_chart_renderer_column_priority(self):
         r = ChartRenderer.__new__(ChartRenderer)
@@ -300,27 +302,29 @@ class TestRenderColumnPriority:
         assert _patch_edge_colors(ax) == [
             '#e74c3c', '#27ae60', '#ff9800', '#ff9800', '#ab47bc']
 
-    def test_webgpu_gpu_column_priority(self):
-        wr = WebGPURenderer.__new__(WebGPURenderer)
-        with patch('core.webgpu.webgpu_renderer.classify_limit_up_down',
-                   side_effect=AssertionError('数据已带limit列，不应重判')):
-            vertices, colors, is_up_list, segments = \
-                wr._process_candlestick_data_gpu(make_kline_df(with_limit_cols=True), STYLE)
-        got = [mcolors.to_hex(tuple(np.round(colors[i], 3)))
-               for i in range(0, len(colors), 4)]
-        assert got == EXPECT_ROW_COLORS
-
-    def test_webgpu_cpu_fallback_column_priority(self):
-        wr = WebGPURenderer.__new__(WebGPURenderer)
+    def test_cpu_render_column_priority(self):
+        """原 WebGPURenderer GPU/CPU-fallback 列优先用例迁移：
+        统一由 _render_candlesticks_efficient 承担，带 limit 列时跳过内部重判"""
+        r = ChartRenderer.__new__(ChartRenderer)
         ax = MagicMock()
-        with patch('core.webgpu.webgpu_renderer.classify_limit_up_down',
+        with patch('optimization.chart_renderer.classify_limit_up_down',
                    side_effect=AssertionError('数据已带limit列，不应重判')):
-            ok = wr._render_cpu_fallback_candlestick(
-                make_kline_df(with_limit_cols=True), STYLE, ax, np.arange(5))
-        assert ok
-        # 影线 LineCollection 添加顺序：limit_up(2)/limit_down(1)/up(1)/down(1)
-        assert _line_colors(ax) == [
-            '#ff9800', '#ff9800', '#ab47bc', '#e74c3c', '#27ae60']
+            r._render_candlesticks_efficient(
+                ax, make_kline_df(with_limit_cols=True), STYLE,
+                np.arange(5), use_datetime_axis=False)
+        assert _patch_edge_colors(ax) == [
+            '#e74c3c', '#27ae60', '#ff9800', '#ff9800', '#ab47bc']
+
+    def test_cpu_render_fallback_compat(self):
+        """原 WebGPURenderer GPU/CPU-fallback 回退兼容用例迁移：
+        无 limit 列时内部按板块判定，仍输出四色"""
+        r = ChartRenderer.__new__(ChartRenderer)
+        ax = MagicMock()
+        r._render_candlesticks_efficient(
+            ax, make_kline_df(with_limit_cols=False), STYLE,
+            np.arange(5), use_datetime_axis=False)
+        assert _patch_edge_colors(ax) == [
+            '#e74c3c', '#27ae60', '#ff9800', '#ff9800', '#ab47bc']
 
 
 # ==================== ④ 无 limit 列时回退兼容 ====================
@@ -338,21 +342,27 @@ class TestRenderFallbackCompat:
             '#e74c3c', '#27ae60', '#ff9800', '#ff9800', '#ab47bc']
 
     def test_webgpu_gpu_fallback(self):
-        wr = WebGPURenderer.__new__(WebGPURenderer)
-        vertices, colors, is_up_list, segments = \
-            wr._process_candlestick_data_gpu(make_kline_df(with_limit_cols=False), STYLE)
-        got = [mcolors.to_hex(tuple(np.round(colors[i], 3)))
-               for i in range(0, len(colors), 4)]
-        assert got == EXPECT_ROW_COLORS
+        """原 WebGPURenderer GPU 回退兼容用例迁移：
+        WebGPU 假实现已删除，回退兼容由 _render_candlesticks_efficient 承担
+        （无 limit 列时内部按板块判定，仍输出四色）"""
+        r = ChartRenderer.__new__(ChartRenderer)
+        ax = MagicMock()
+        r._render_candlesticks_efficient(
+            ax, make_kline_df(with_limit_cols=False), STYLE,
+            np.arange(5), use_datetime_axis=False)
+        assert _patch_edge_colors(ax) == [
+            '#e74c3c', '#27ae60', '#ff9800', '#ff9800', '#ab47bc']
 
     def test_webgpu_cpu_fallback(self):
-        wr = WebGPURenderer.__new__(WebGPURenderer)
+        """原 WebGPURenderer CPU fallback 用例迁移：
+        影线按类着色由 _render_candlesticks_efficient 承担"""
+        r = ChartRenderer.__new__(ChartRenderer)
         ax = MagicMock()
-        ok = wr._render_cpu_fallback_candlestick(
-            make_kline_df(with_limit_cols=False), STYLE, ax, np.arange(5))
-        assert ok
+        r._render_candlesticks_efficient(
+            ax, make_kline_df(with_limit_cols=False), STYLE,
+            np.arange(5), use_datetime_axis=False)
         assert _line_colors(ax) == [
-            '#ff9800', '#ff9800', '#ab47bc', '#e74c3c', '#27ae60']
+            '#e74c3c', '#27ae60', '#ff9800', '#ff9800', '#ab47bc']
 
     def test_no_symbol_column_fallback(self):
         """无 symbol 列（extract_symbol 返回空 → 按主板 10%）不抛异常"""
@@ -361,3 +371,91 @@ class TestRenderFallbackCompat:
         ax = MagicMock()
         w._render_ohlc_bars(ax, df, STYLE, np.arange(5))
         assert len(ax.vlines.call_args_list) == 5
+
+
+# ==================== ⑤ R292-HV4 分桶采样保留关键形态 ====================
+
+def _bucket_df(n, seed=7, monotone=False):
+    """采样测试数据；monotone=True 时 high 单调递增/low 单调递减（峰谷可预期）"""
+    rng = np.random.default_rng(seed)
+    if monotone:
+        return pd.DataFrame({
+            'open': np.arange(n, dtype=float),
+            'high': np.arange(n, dtype=float) + 1,
+            'low': np.arange(n, dtype=float) - 1,
+            'close': np.arange(n, dtype=float),
+            'volume': rng.integers(1000, 10000, n)})
+    close = np.cumsum(rng.standard_normal(n)) + 100
+    return pd.DataFrame({
+        'open': close,
+        'high': np.maximum(close, close + 0.5) + rng.random(n),
+        'low': np.minimum(close, close + 0.5) - rng.random(n),
+        'close': close,
+        'volume': rng.integers(1000, 10000, n)})
+
+
+class TestBucketSamplingKeyShape:
+    """R292-HV4：分桶代表性行采样（_bucket_key_indices）——
+    每桶保留峰(最高价)+谷(最低价)，桶内涨跌停追加（P0 四色），首尾强制保留
+    （替代等距 linspace 抽行：后者丢失桶内极值/涨跌停/巨量 bar）"""
+
+    def test_bucket_preserves_peak_and_valley(self):
+        """单调数据下每桶峰(桶尾)+谷(桶首)行必被保留（价格形态不丢）"""
+        df = _bucket_df(100, monotone=True)
+        idx = util_mod._bucket_key_indices(df, 10)  # num_buckets=4 → 每桶 25 行
+        kept = set(idx.tolist())
+        expected = {0, 24, 25, 49, 50, 74, 75, 99}
+        assert expected <= kept, f'峰谷未保留: {sorted(expected - kept)}'
+
+    def test_bucket_appends_limit_rows(self):
+        """桶内含涨跌停（非峰非谷）时追加保留（P0 四色不因降采样丢失）"""
+        df = _bucket_df(100)
+        df['limit_up'] = False
+        df['limit_down'] = False
+        df.loc[10, 'limit_up'] = True    # 桶[0,25) 内非峰非谷
+        df.loc[20, 'limit_down'] = True
+        idx = set(util_mod._bucket_key_indices(df, 10).tolist())
+        assert 10 in idx and 20 in idx
+
+    def test_first_last_rows_always_kept(self):
+        """走势连续性：首尾行强制保留"""
+        for n in (1500, 50000):
+            idx = util_mod._bucket_key_indices(_bucket_df(n), 1200)
+            assert idx[0] == 0 and idx[-1] == n - 1
+
+    def test_length_within_budget(self):
+        """各规模采样结果不超预算（涨跌停桶追加行容忍 +2）"""
+        df = _bucket_df(50000)
+        df['limit_up'] = False
+        df['limit_down'] = False
+        df.loc[49996, 'limit_up'] = True
+        idx = util_mod._bucket_key_indices(df, 1200)
+        assert len(idx) <= 1202
+
+    def test_50000_rows_sampling_fast(self):
+        """5 万行采样耗时可控（<200ms 宽松阈值防 CI 抖动，实测 ~5ms）"""
+        import time
+        df = _bucket_df(50000)
+        t0 = time.perf_counter()
+        util_mod._bucket_key_indices(df, 1200)
+        assert (time.perf_counter() - t0) * 1000 < 200
+
+    def test_minute_path_uses_bucket_sampling(self):
+        """分钟数据路径：按交易日分组桶采样，总行数 ≤ 预算且每交易日保留细节"""
+        w = _make_widget()
+        w._is_minute_frequency = lambda kdata: True
+        # 10 分钟频率 1500 根 → 连续 ~10.4 个自然日 → 11 个分组
+        df = _bucket_df(1500)
+        df['datetime'] = pd.date_range('2024-01-02', periods=len(df), freq='10min')
+        df['limit_up'] = False
+        df['limit_down'] = False
+        df.loc[1496, 'limit_up'] = True  # 尾桶涨跌停
+        df.loc[1497, 'limit_down'] = True
+        out = w._downsample_kdata(df, 1200)
+        assert len(out) <= 1200
+        # 每交易日至少保留 per_day(≥2) 根 → 总行数显著小于全量
+        assert len(out) < len(df)
+        # limit 列随行保留（铁律⑲/㉑：不重判）
+        assert 1496 in out.index and 1497 in out.index
+        assert out.loc[1496, 'limit_up'] and not out.loc[1496, 'limit_down']
+        assert out.loc[1497, 'limit_down'] and not out.loc[1497, 'limit_up']

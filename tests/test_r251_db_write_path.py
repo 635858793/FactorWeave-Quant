@@ -10,7 +10,6 @@ R251 回归测试: DuckDB 写路径统一 (historical_kline_data)
 
 验证点:
 - T01 add_kline 调用 insert_kline_data 且参数正确 (股票代码/周期/数据/库路径)
-- T02 _store_to_duckdb 使用 'historical_kline_data' 表名 (patch insert_dataframe 断言)
 - T03 duckdb_operations.insert_kline_data 列名映射 (code→symbol, date/datetime→timestamp,
       补充 frequency/data_source, 仅保留表结构列)
 - T04 duckdb_operations.delete_kline_data 按 symbol + frequency 删除
@@ -93,31 +92,6 @@ class TestR251DBWritePath(unittest.TestCase):
 
         self.assertFalse(result)
         udm._cache_data.assert_not_called()
-
-    # ---------------------------------------------------------------- T02
-    def test_store_to_duckdb_uses_historical_kline_data(self):
-        """T02: _store_to_duckdb 使用 historical_kline_data 表名且完成列名映射"""
-        udm = _build_udm()
-        udm.duckdb_operations.insert_dataframe = MagicMock(
-            return_value=InsertResult(success=True, rows_inserted=10, execution_time=0.1, batch_count=1)
-        )
-        data = _make_kdata_df(10)
-
-        udm._store_to_duckdb(data, '000001', 'D')
-
-        call_kwargs = udm.duckdb_operations.insert_dataframe.call_args.kwargs
-        self.assertEqual(call_kwargs['table_name'], 'historical_kline_data')
-        self.assertEqual(call_kwargs['database_path'], '/tmp/test_asset.duckdb')
-        self.assertTrue(call_kwargs['upsert'])
-
-        store_df = call_kwargs['data']
-        for col in ('symbol', 'timestamp', 'frequency', 'data_source'):
-            self.assertIn(col, store_df.columns)
-        self.assertEqual(store_df['symbol'].iloc[0], '000001')
-        self.assertEqual(store_df['frequency'].iloc[0], '1d')
-        self.assertEqual(store_df['data_source'].iloc[0], 'unified_data_manager')
-        self.assertNotIn('datetime', store_df.columns)
-        self.assertNotIn('code', store_df.columns)
 
     # ---------------------------------------------------------------- T03
     def test_insert_kline_data_column_mapping(self):

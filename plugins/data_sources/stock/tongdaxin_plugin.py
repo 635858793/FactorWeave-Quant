@@ -991,7 +991,8 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             DataType.HISTORICAL_KLINE,
             DataType.REAL_TIME_QUOTE,
             DataType.FUNDAMENTAL,
-            DataType.TRADE_TICK
+            DataType.TRADE_TICK,
+            DataType.INTRADAY_DATA  # R295-G4 分时数据 (get_minute_time_data)
         ]
 
     def get_supported_adjustment_types(self) -> List[str]:
@@ -2953,6 +2954,100 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
             logger.error(f"最终格式化失败: {e}")
             return pd.DataFrame()
 
+    # A股 240 分钟分时点: 上午 09:31-11:30 (120) + 下午 13:01-15:00 (120)
+    _INTRADAY_MORNING_MINUTES = 120
+    _INTRADAY_AFTERNOON_MINUTES = 120
+
+    @staticmethod
+    def _generate_intraday_timestamps(trade_date: str) -> List[datetime]:
+        """生成 A股 240 分钟分时时刻序列 (09:31-11:30, 13:01-15:00)
+
+        pytdx get_minute_time_data 仅返回 price/vol, 不携带时刻,
+        由客户端按交易日生成完整时刻序列 (R293-G4 数据源层契约)。
+        """
+        base = datetime.strptime(trade_date, '%Y%m%d')
+        timestamps = []
+        for i in range(TongdaxinStockPlugin._INTRADAY_MORNING_MINUTES):
+            timestamps.append(base.replace(hour=9, minute=31) + timedelta(minutes=i))
+        for i in range(TongdaxinStockPlugin._INTRADAY_AFTERNOON_MINUTES):
+            timestamps.append(base.replace(hour=13, minute=1) + timedelta(minutes=i))
+        return timestamps
+
+    def get_minute_time_data(self, symbol: str, date: str = None) -> pd.DataFrame:
+        """获取当日 (或指定日期) 分时数据
+
+        pytdx 分时接口约束 (pytdx/parser/get_minute_time_data.py 实证):
+        - get_minute_time_data(market, code) 仅返回 price/vol 两字段,
+          无 datetime/amount -> 本方法补充时刻序列 + amount=price*vol 近似,
+          供上层计算均价线(VWAP)。
+        - date 传值时走 get_history_minute_time_data(market, code, date)
+          取历史分时。
+
+        Args:
+            symbol: 股票代码 (600000 / 000001 / 600000.SH 均可)
+            date: 交易日 YYYYMMDD, 默认当日实时分时
+
+        Returns:
+            pd.DataFrame: index=datetime (分钟时刻), 列 [price, vol, amount]
+            失败/空数据返回空 DataFrame
+        """
+        try:
+            if not PYTDX_AVAILABLE:
+                logger.error("pytdx 库不可用，无法获取分时数据")
+                # 降级由 TET 管道 failover 到腾讯独立插件 (tencent_plugin)，插件间隔离
+                return pd.DataFrame()
+
+            market, code = self._convert_symbol_to_tdx_format(symbol)
+            trade_date = date or datetime.now().strftime('%Y%m%d')
+
+            def _fetch(api_client):
+                if date:
+                    return api_client.get_history_minute_time_data(market, code, trade_date)
+                return api_client.get_minute_time_data(market, code)
+
+            # 优先连接池, 否则单连接 (与 _fetch_single_batch/get_real_time_data 同构)
+            if self.use_connection_pool and self.connection_pool:
+                with self.connection_pool.get_connection() as api_client:
+                    raw = _fetch(api_client)
+            else:
+                if not self._ensure_connection():
+                    logger.error(f"无法连接到通达信服务器，获取 {symbol} 分时数据失败")
+                    return pd.DataFrame()
+                with self.connection_lock:
+                    raw = _fetch(self.api_client)
+
+            if not raw:
+                logger.warning(f"分时数据为空: {symbol} {trade_date}")
+                # 降级由 TET 管道 failover 到腾讯独立插件 (tencent_plugin)，插件间隔离
+                return pd.DataFrame()
+
+            timestamps = self._generate_intraday_timestamps(trade_date)
+            rows = []
+            for idx, item in enumerate(raw):
+                ts = timestamps[idx] if idx < len(timestamps) else timestamps[-1] + timedelta(minutes=idx - len(timestamps) + 1)
+                price = float(item.get('price', 0))
+                vol = int(item.get('vol', 0))
+                rows.append({
+                    'datetime': ts,
+                    'price': price,
+                    'vol': vol,
+                    'amount': round(price * vol, 2),
+                })
+
+            df = pd.DataFrame(rows)
+            if df.empty:
+                return df
+            df = df.set_index('datetime')
+            self.request_count += 1
+            logger.info(f"获取分时数据成功: {symbol} {trade_date} {len(df)} 点")
+            return df
+
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"获取分时数据失败 {symbol}: {e}")
+            # 降级由 TET 管道 failover 到腾讯独立插件 (tencent_plugin)，插件间隔离
+            return pd.DataFrame()
+
     def get_real_time_data(self, symbols: List[str]) -> Dict[str, Any]:
         """获取实时行情数据"""
         try:
@@ -3050,6 +3145,13 @@ class TongdaxinStockPlugin(IDataSourcePlugin):
                     return df
                 else:
                     return pd.DataFrame()
+
+            elif data_type in ('minute_time', 'intraday', 'intraday_data'):
+                # R295-G4 分时数据源层: 实时分时 (get_minute_time_data) /
+                # 历史分时 (date 传 YYYYMMDD), 时刻由客户端生成。
+                # 'intraday_data' 为 DataType.INTRADAY_DATA 的枚举 value,
+                # TET 管道 _extract_from_source else 兜底传 original_query.data_type.value。
+                return self.get_minute_time_data(symbol, date=kwargs.get('date'))
 
             elif data_type == 'stock_list':
                 return self.get_stock_list()

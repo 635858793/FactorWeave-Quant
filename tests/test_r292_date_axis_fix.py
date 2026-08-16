@@ -262,15 +262,21 @@ class TestIncrementalFillKdata:
 
 
 class TestCpuFallbackAcceptsX:
-    """WebGPU CPU 降级渲染支持外部 x（坐标轴一致性修复的接口部分）"""
+    """CPU/fallback 渲染路径支持外部 x（坐标轴一致性修复的接口部分；
+    WebGPU 假实现已删除，外部 x 支持由 fallback MatplotlibRenderer 承担）"""
 
     def test_render_cpu_fallback_candlestick_accepts_x(self):
-        from core.webgpu.webgpu_renderer import WebGPURenderer, GPURendererConfig
-        r = WebGPURenderer(config=GPURendererConfig())
+        from core.webgpu.fallback import MatplotlibRenderer
+        r = MatplotlibRenderer.__new__(MatplotlibRenderer)
+        r._initialized = True
+        r._update_performance_stats = lambda *a, **k: None
+        r._data_optimizer = None
+        r._volume_virtual_renderer = None
         kdata = pd.DataFrame({
+            'symbol': ['600519', '600519'],
             'open': [10.0, 11.0], 'high': [11.0, 12.0], 'low': [9.0, 10.0],
             'close': [11.0, 12.0], 'volume': [1000, 1000],
         })
         ax = MagicMock()
-        ok = r._render_cpu_fallback_candlestick(kdata, {}, ax, x=np.arange(2))
+        ok = r.render_candlesticks(ax, kdata, {}, x=np.arange(2), use_datetime_axis=False)
         assert ok is True

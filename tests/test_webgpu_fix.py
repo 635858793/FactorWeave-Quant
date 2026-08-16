@@ -1,10 +1,11 @@
 """
-测试 WebGPU 渲染器修复
+测试 WebGPU 渲染器修复（WebGPU 假实现已删除，相关用例迁移到 fallback 路径）
 """
 import sys
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from unittest.mock import MagicMock
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent
@@ -125,97 +126,100 @@ def test_array_boolean_check():
 
 
 def test_volume_data_processing():
-    """测试成交量数据处理"""
+    """测试成交量渲染（WebGPU 假实现已删除，原 VolumeDataProcessor 用例迁移到 fallback 路径）"""
     print("=" * 60)
-    print("测试 3: 成交量数据处理")
+    print("测试 3: 成交量渲染")
     print("=" * 60)
     
     try:
-        from core.webgpu.webgpu_renderer import VolumeDataProcessor, GPURendererConfig
+        from core.webgpu.fallback import MatplotlibRenderer
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
         
-        # 创建配置和处理器
-        config = GPURendererConfig()
-        processor = VolumeDataProcessor(config)
+        # 创建渲染器（__new__ 绕过 __init__，手动补齐初始化状态）
+        renderer = MatplotlibRenderer.__new__(MatplotlibRenderer)
+        renderer._initialized = True
+        renderer._update_performance_stats = lambda *a, **k: None
         
         # 创建测试数据
         test_data = pd.DataFrame({
+            'open': [10, 11, 10, 12, 11, 10],
+            'close': [11, 10, 11, 11, 12, 11],
+            'high': [12, 12, 12, 13, 13, 12],
+            'low': [9, 9, 9, 10, 10, 9],
             'volume': [100, 200, 150, 300, 250, 180]
         })
         
-        # 测试数据处理
-        print("✓ 测试成交量数据处理...")
-        vertices, colors, indices = processor.process_volume_data(test_data, {})
+        # 测试成交量渲染
+        print("✓ 测试成交量渲染...")
+        fig, ax = plt.subplots()
+        ok = renderer.render_volume(ax, test_data, {}, x=np.arange(len(test_data)),
+                                    use_datetime_axis=False)
         
-        print(f"  ✓ 顶点数量：{len(vertices)}")
-        print(f"  ✓ 颜色数量：{len(colors)}")
-        print(f"  ✓ 索引数量：{len(indices)}")
+        print(f"  ✓ 渲染结果：{ok}")
+        print(f"  ✓ 集合数量：{len(ax.collections)}")
         
         # 验证数据格式
-        assert len(vertices) > 0, "顶点数据不应为空"
-        assert len(colors) > 0, "颜色数据不应为空"
-        assert len(vertices) % 8 == 0, "顶点数量应该是 8 的倍数（每个柱子 8 个值）"
-        
-        # 验证颜色数据与顶点数据的比例关系
-        num_quads = len(vertices) // 8
-        expected_colors = num_quads * 3  # 每个柱子 3 个颜色值
-        assert len(colors) == expected_colors, f"颜色数量应该是 {expected_colors}，实际为 {len(colors)}"
-        
-        print(f"  ✓ 数据格式验证通过")
-        print(f"  ✓ 颜色/顶点比例正确：{len(colors)} 颜色 / {num_quads} 柱子 = 3 值/柱")
+        assert ok, "成交量渲染应成功"
+        assert len(ax.collections) > 0, "成交量渲染后应产生集合"
         
         # 测试空数据
         print("✓ 测试空数据处理...")
         empty_data = pd.DataFrame({'volume': []})
-        v_empty, c_empty, i_empty = processor.process_volume_data(empty_data, {})
-        print(f"  ✓ 空数据处理成功：{len(v_empty)} 个顶点")
+        empty_ax = MagicMock()
+        empty_ok = renderer.render_volume(empty_ax, empty_data, {}, x=np.arange(0),
+                                          use_datetime_axis=False)
+        print(f"  ✓ 空数据处理结果：{empty_ok}")
         
-        print("\n✅ 成交量数据处理测试通过！\n")
+        plt.close(fig)
+        
+        print("\n✅ 成交量渲染测试通过！\n")
         return True
         
     except Exception as e:
-        print(f"\n❌ 成交量数据处理测试失败：{e}\n")
+        print(f"\n❌ 成交量渲染测试失败：{e}\n")
         import traceback
         traceback.print_exc()
         return False
 
 
 def test_matplotlib_conversion():
-    """测试 matplotlib 转换修复"""
+    """测试 fallback matplotlib 渲染转换修复"""
     print("=" * 60)
-    print("测试 4: matplotlib 转换修复")
+    print("测试 4: matplotlib 渲染")
     print("=" * 60)
     
     try:
-        from core.webgpu.webgpu_renderer import WebGPURenderer, GPURendererConfig
+        from core.webgpu.fallback import MatplotlibRenderer
         import matplotlib
         matplotlib.use('Agg')  # 使用非交互式后端
         import matplotlib.pyplot as plt
         
-        # 创建渲染器
-        config = GPURendererConfig()
-        renderer = WebGPURenderer(config)
+        # 创建渲染器（__new__ 绕过 __init__，手动补齐初始化状态）
+        renderer = MatplotlibRenderer.__new__(MatplotlibRenderer)
+        renderer._initialized = True
+        renderer._update_performance_stats = lambda *a, **k: None
         
         # 创建测试图表
         fig, ax = plt.subplots()
         
-        # 创建测试顶点数据
-        vertices = np.array([
-            0, 0, 0, 100, 1, 100, 1, 0,  # 第一个柱子
-            2, 0, 2, 200, 3, 200, 3, 0   # 第二个柱子
-        ], dtype=np.float32)
+        # 创建测试数据（2 个柱子）
+        test_data = pd.DataFrame({
+            'open': [10.0, 10.0],
+            'close': [11.0, 9.0],
+            'high': [11.5, 9.5],
+            'low': [9.5, 8.5],
+            'volume': [100.0, 200.0]
+        })
         
-        # 创建测试颜色数据
-        colors = np.array([
-            1.0, 0.0, 0.0,  # 红色
-            0.0, 1.0, 0.0   # 绿色
-        ], dtype=np.float32)
-        
-        # 测试转换
-        print("✓ 测试 GPU 数据到 matplotlib 的转换...")
-        success = renderer._convert_gpu_data_to_matplotlib(vertices, colors, ax)
+        # 测试渲染
+        print("✓ 测试成交量渲染到 matplotlib...")
+        success = renderer.render_volume(ax, test_data, {}, x=np.arange(2),
+                                         use_datetime_axis=False)
         
         if success:
-            print("  ✓ 转换成功")
+            print("  ✓ 渲染成功")
             
             # 验证图表上有内容
             if len(ax.collections) > 0:
@@ -228,15 +232,15 @@ def test_matplotlib_conversion():
             else:
                 print("  ⚠ 警告：图表集合为空")
         else:
-            print("  ✗ 转换失败")
+            print("  ✗ 渲染失败")
         
         plt.close(fig)
         
-        print("\n✅ matplotlib 转换测试通过！\n")
+        print("\n✅ matplotlib 渲染测试通过！\n")
         return True
         
     except Exception as e:
-        print(f"\n❌ matplotlib 转换测试失败：{e}\n")
+        print(f"\n❌ matplotlib 渲染测试失败：{e}\n")
         import traceback
         traceback.print_exc()
         return False

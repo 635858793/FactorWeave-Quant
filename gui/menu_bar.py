@@ -314,7 +314,8 @@ class MainMenuBar(QMenuBar):
             # 投资组合管理
             self.portfolio_management_action = QAction("投资组合管理", self)
             self.portfolio_management_action.setStatusTip("打开投资组合管理对话框")
-            self.portfolio_management_action.setShortcut("Ctrl+Shift+P")
+            # R293: 移除重复快捷键 Ctrl+Shift+P（与 通用插件/连接池管理 冲突，
+            # 保留在 通用插件 action 上）
             self.strategy_menu.addAction(self.portfolio_management_action)
 
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
@@ -426,12 +427,6 @@ class MainMenuBar(QMenuBar):
             # 注意：信号连接将在connect_signals方法中统一处理
             self.plugin_menu.addAction(self.plugin_manager_action)
 
-            # 情绪数据插件
-            self.sentiment_plugin_action = QAction("情绪数据插件", self)
-            self.sentiment_plugin_action.setStatusTip("管理情绪分析数据源插件")
-            # 注意：信号连接将在connect_signals方法中统一处理
-            self.plugin_menu.addAction(self.sentiment_plugin_action)
-            
             self.tools_menu.addSeparator()
             
             # 分布式节点监控
@@ -489,7 +484,7 @@ class MainMenuBar(QMenuBar):
             # 连接池管理
             self.connection_pool_manager_action = QAction("连接池管理", self)
             self.connection_pool_manager_action.setStatusTip("打开统一连接池管理界面（包含列表、配置、自适应、监控、历史）")
-            self.connection_pool_manager_action.setShortcut("Ctrl+Shift+P")
+            # R293: 移除重复快捷键 Ctrl+Shift+P（与 通用插件 冲突，保留在 通用插件 action 上）
             self.tools_menu.addAction(self.connection_pool_manager_action)
 
             # 注意：信号连接已在connect_signals方法中统一处理，这里不再重复连接
@@ -776,38 +771,6 @@ class MainMenuBar(QMenuBar):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存文件失败: {str(e)}")
 
-    def import_data(self):
-        """Import data"""
-        try:
-            file_path, _ = QFileDialog.getOpenFileName(
-                self,
-                "导入数据",
-                "",
-                "CSV Files (*.csv);;Excel Files (*.xlsx);;All Files (*)"
-            )
-
-            if file_path:
-                QMessageBox.information(self, "提示", "数据导入功能开发中，敬请期待。")
-
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"导入数据失败: {str(e)}")
-
-    def export_data(self):
-        """Export data"""
-        try:
-            file_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "导出数据",
-                "",
-                "CSV Files (*.csv);;Excel Files (*.xlsx);;All Files (*)"
-            )
-
-            if file_path:
-                QMessageBox.information(self, "提示", "数据导出功能开发中，敬请期待。")
-
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"导出数据失败: {str(e)}")
-
     def undo(self):
         """Undo last action"""
         QMessageBox.information(self, "提示", "撤销功能开发中，敬请期待。")
@@ -887,28 +850,6 @@ class MainMenuBar(QMenuBar):
         """Perform risk analysis"""
         QMessageBox.information(self, "提示", "风险分析功能开发中，敬请期待。")
 
-    def show_settings(self):
-        """Show settings dialog"""
-        if hasattr(self.parent(), 'show_settings'):
-            self.parent().show_settings()
-
-    def show_calculator(self):
-        """Show calculator"""
-        QMessageBox.information(self, "提示", "计算器功能开发中，敬请期待。")
-
-    def show_converter(self):
-        """Show unit converter"""
-        QMessageBox.information(self, "提示", "单位转换器功能开发中，敬请期待。")
-
-    def show_system_optimizer(self):
-        """Show system optimizer"""
-        try:
-            from gui.dialogs import show_system_optimizer_dialog
-            show_system_optimizer_dialog(self.parent())
-        except Exception as e:
-            QMessageBox.critical(self.parent(), "错误", f"打开系统优化器失败: {str(e)}")
-            logger.error(f"打开系统优化器失败: {str(e)}")
-
     def show_webgpu_status(self):
         """Show WebGPU status dialog"""
         try:
@@ -918,10 +859,6 @@ class MainMenuBar(QMenuBar):
         except Exception as e:
             QMessageBox.critical(self.parent(), "错误", f"打开WebGPU状态对话框失败: {str(e)}")
             logger.error(f"打开WebGPU状态对话框失败: {str(e)}")
-
-    def show_documentation(self):
-        """Show documentation"""
-        QMessageBox.information(self, "提示", "文档查看器功能开发中，敬请期待。")
 
     def apply_theme(self, theme_manager):
         """根据主题优化菜单栏样式"""
@@ -1073,7 +1010,6 @@ class MainMenuBar(QMenuBar):
                 # 插件管理功能 - 使用MenuBar中的直接方法
                 ('data_source_plugin_action', 'show_data_source_plugin_manager'),
                 ('plugin_manager_action', 'show_plugin_manager'),
-                ('sentiment_plugin_action', 'show_sentiment_plugin_manager'),
                 ('plugin_market_action', 'show_plugin_market'),
                 
                 # 分布式节点监控
@@ -1232,7 +1168,13 @@ class MainMenuBar(QMenuBar):
             
             # 获取分布式服务
             container = get_service_container()
-            distributed_service = container.get('distributed_service')
+            # R293 修复: container.get → resolve_by_name (service_container.py L154-156)
+            # 未注册时抛 ValueError 而非返回 None，导致下方"分布式服务未初始化"
+            # 警告分支不可达、恒落入 except 弹"打开失败"; 改为安全获取
+            try:
+                distributed_service = container.get('distributed_service')
+            except Exception:
+                distributed_service = None
             
             if not distributed_service:
                 QMessageBox.warning(
@@ -1255,25 +1197,6 @@ class MainMenuBar(QMenuBar):
             logger.error(f"打开分布式节点监控失败: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-    
-    def show_sentiment_plugin_manager(self):
-        """显示情绪数据插件管理器"""
-        try:
-            # 优先使用coordinator的方法
-            if self.coordinator and hasattr(self.coordinator, '_on_plugin_manager'):
-                self.coordinator._on_plugin_manager("数据源管理")
-                return
-
-            # 如果没有coordinator，直接创建对话框
-            self._create_plugin_dialog("数据源管理")
-
-        except Exception as e:
-            QMessageBox.critical(
-                self.parent(),
-                "错误",
-                f"打开情绪数据插件管理器失败:\n{str(e)}"
-            )
-            logger.error(f"打开情绪数据插件管理器失败: {str(e)}")
 
     def show_plugin_market(self):
         """显示插件市场"""
@@ -1359,8 +1282,25 @@ class MainMenuBar(QMenuBar):
                 plugin_manager = self.parent().plugin_manager
                 logger.info("从父窗口获取plugin_manager成功")
 
+            # R294 修复: 增强导入窗口单例复用——原实现每次点击无条件 new 新实例，
+            # 多次点击弹多个窗口(P2)；参照 _on_data_management_center 单例范式
+            # (main_window_coordinator.py L2567-2582)：已存在则置顶/复用，不重复创建;
+            # destroyed 信号重置引用，防御关闭后 C++ 对象悬空。
+            win = getattr(self, 'enhanced_import_window', None)
+            if win is not None:
+                if win.isVisible():
+                    win.raise_()
+                    win.activateWindow()
+                else:
+                    win.show()
+                logger.info("复用已有增强版数据导入窗口")
+                return
+
             # 创建增强版数据导入窗口
             self.enhanced_import_window = EnhancedDataImportMainWindow(plugin_manager=plugin_manager)
+            self.enhanced_import_window.destroyed.connect(
+                lambda: setattr(self, 'enhanced_import_window', None)
+            )
             self.enhanced_import_window.show()
 
             logger.info("增强版数据导入系统已启动")
@@ -1380,24 +1320,3 @@ class MainMenuBar(QMenuBar):
                 f"启动增强版数据导入系统失败:\n{str(e)}"
             )
             logger.error(f"启动增强版数据导入系统失败: {e}")
-
-    def _on_duckdb_import(self):
-        """处理DuckDB数据导入菜单点击"""
-        try:
-            # 这里可以添加原有的DuckDB导入功能
-            # 或者重定向到增强版导入
-            QMessageBox.information(
-                self.parent(),
-                "提示",
-                "建议使用增强版智能导入系统，它包含了所有DuckDB功能并增加了AI优化功能。"
-            )
-
-            logger.info("DuckDB导入功能被重定向到增强版导入系统")
-
-        except Exception as e:
-            QMessageBox.critical(
-                self.parent(),
-                "错误",
-                f"启动DuckDB导入失败:\n{str(e)}"
-            )
-            logger.error(f"启动DuckDB导入失败: {e}")

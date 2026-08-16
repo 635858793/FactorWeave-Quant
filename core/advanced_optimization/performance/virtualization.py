@@ -527,8 +527,8 @@ class ChunkRenderer:
             else:
                 quality_level = 1
             
-            # 聚合数据
-            aggregated_data, actual_quality = self.aggregator.aggregate_chunk(
+            # 聚合数据（aggregate_chunk 返回单值 np.ndarray，L336-370；勿双值解包）
+            aggregated_data = self.aggregator.aggregate_chunk(
                 data, start_idx, end_idx, quality_level)
             
             # 创建渲染块
@@ -602,23 +602,8 @@ class VirtualScrollRenderer(QObject):
         self._cache_hit_count = 0
         self._cache_miss_count = 0
         
-        # WebGPU渲染器集成
-        try:
-            from core.webgpu import GPURendererConfig, WebGPURenderer
-            self.webgpu_renderer = WebGPURenderer(GPURendererConfig(
-                preferred_backend="moderngl"  # 尝试使用ModernGL后端
-            ))
-            # 尝试初始化WebGPU渲染器
-            self.gpu_acceleration_enabled = self.webgpu_renderer.initialize()
-            self.gpu_acceleration_toggled.emit(self.gpu_acceleration_enabled)
-            
-            if self.gpu_acceleration_enabled:
-                logger.info("WebGPU渲染器集成成功，将使用GPU加速渲染")
-            else:
-                logger.warning("⚠️ WebGPU渲染器初始化失败，将使用CPU渲染")
-        except Exception as e:
-            logger.warning(f"WebGPU渲染器集成失败: {e}")
-            self.gpu_acceleration_enabled = False
+        # WebGPU 假渲染器集成已按架构决策移除，统一走 CPU 渲染路径
+        self.gpu_acceleration_enabled = False
         
         # 性能监控
         self.render_times = deque(maxlen=100)
@@ -856,15 +841,9 @@ class VirtualScrollRenderer(QObject):
         self.render_times.clear()
         self.frame_times.clear()
         self._clear_cache()  # 清除缓存
-        
-        # 清理WebGPU资源
-        if hasattr(self, 'webgpu_renderer') and self.webgpu_renderer:
-            try:
-                self.webgpu_renderer.cleanup()
-                logger.debug("WebGPU资源已清理")
-            except Exception as e:
-                logger.warning(f"清理WebGPU资源失败: {e}")
-        
+
+        # WebGPU 假渲染器已移除，无需清理 GPU 资源
+
         logger.info("虚拟滚动渲染器资源清理完成")
 
 # 便捷函数

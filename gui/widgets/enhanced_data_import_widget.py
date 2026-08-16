@@ -3051,9 +3051,7 @@ class EnhancedDataImportWidget(QWidget):
                     self.download_service.download_incremental_data(
                         symbols=symbols_to_fix,
                         end_date=datetime.now(),
-                        strategy=DownloadStrategy.GAP_FILL,
-                        skip_weekends=True,
-                        skip_holidays=True
+                        strategy=DownloadStrategy.GAP_FILL
                     )
                 )
 
@@ -3113,9 +3111,7 @@ class EnhancedDataImportWidget(QWidget):
                     self.download_service.download_incremental_data(
                         symbols=[symbol],
                         end_date=datetime.now(),
-                        strategy=DownloadStrategy.LATEST_ONLY,
-                        skip_weekends=True,
-                        skip_holidays=True
+                        strategy=DownloadStrategy.LATEST_ONLY
                     )
                 )
 
@@ -3971,13 +3967,6 @@ class EnhancedDataImportWidget(QWidget):
                     timeout=self.timeout_spin.value() if hasattr(self, 'timeout_spin') else 60,
                     progress_interval=self.progress_interval_spin.value() if hasattr(self, 'progress_interval_spin') else 5,
                     validate_data=self.validate_data_cb.isChecked() if hasattr(self, 'validate_data_cb') else True,
-                    # 间隙填充专用配置
-                    gap_fill_mode=True,
-                    gap_threshold_days=gap_threshold,
-                    gap_fill_threshold=gap_threshold,
-                    auto_fill_gaps=True,
-                    skip_weekends=True,
-                    skip_holidays=True,
                     # 复选框配置
                     check_completeness=check_completeness,
                     skip_latest_data=skip_latest_data
@@ -4008,13 +3997,6 @@ class EnhancedDataImportWidget(QWidget):
                     timeout=self.timeout_spin.value() if hasattr(self, 'timeout_spin') else 60,
                     progress_interval=self.progress_interval_spin.value() if hasattr(self, 'progress_interval_spin') else 5,
                     validate_data=self.validate_data_cb.isChecked() if hasattr(self, 'validate_data_cb') else True,
-                    # 智能补全专用配置
-                    smart_fill_mode=True,
-                    completion_strategy=strategy,
-                    recent_days_only=30,
-                    auto_fill_gaps=True,
-                    skip_weekends=True,
-                    skip_holidays=True,
                     # 复选框配置
                     check_completeness=check_completeness,
                     skip_latest_data=skip_latest_data
@@ -4047,8 +4029,6 @@ class EnhancedDataImportWidget(QWidget):
                     validate_data=self.validate_data_cb.isChecked() if hasattr(self, 'validate_data_cb') else True,
                     # 增量下载专用配置
                     incremental_days=incremental_days,
-                    skip_weekends=True,
-                    skip_holidays=True,
                     # 复选框配置
                     check_completeness=check_completeness,
                     skip_latest_data=skip_latest_data

@@ -153,11 +153,19 @@ class MatplotlibRenderer(BaseRenderer):
         self._figure = None
         self._axes = None
         
-        # 虚拟滚动渲染器
+        # R292-HV2：不再启用成交量虚拟滚动（_volume_virtual_renderer 保持 None）。
+        # 性能决策（用户实测：接口修正启用后系统严重卡顿）：
+        #   ① VirtualScrollRenderer.__init__ 无条件启动 60fps QTimer（virtualization.py
+        #      L627-629）→ 每图表实例每 16ms 执行 _render_loop（request_chunk 聚合 +
+        #      data_rendered 信号）→ 多图表叠加持续占用主线程；
+        #   ② fallback.render_volume 每次渲染前无条件 set_volume_data →
+        #      VirtualScrollRenderer.set_data_source（virtualization.py L660-661）每次
+        #      chunks.clear() + _clear_cache() → chunk 缓存永远 miss，每次全量重建；
+        #   ③ _render_chunk（volume_virtual_renderer.py L361-377）逐柱 Python 循环
+        #      （chunk_size 默认 2000 → 每 chunk 2000 次 append）→ 大行情每次刷新极慢。
+        # 常规渲染路径（下方 render_volume）为 numpy 向量化 PolyCollection，且四色
+        # 列优先（limit_up/limit_down 列）已修，性能与颜色均满足需求。
         self._volume_virtual_renderer = None
-        if VIRTUAL_SCROLL_AVAILABLE:
-            self._volume_virtual_renderer = VolumeVirtualRenderer()
-            logger.info("Matplotlib渲染器已启用成交量虚拟滚动优化")
         
         # 数据采样优化器
         self._data_optimizer = None
@@ -265,10 +273,17 @@ class MatplotlibRenderer(BaseRenderer):
             rights = xvals + candle_width / 2
 
             is_up = closes >= opens
-            # R292 精确判定：按板块涨/跌停价（与 K 线各路径共用
-            # core/rendering/limit_price.py，替代固定 4.8% 阈值）
-            is_limit_up, is_limit_down = classify_limit_up_down(
-                closes, highs, lows, extract_symbol(data))
+            # R292-HV4：列优先读取 limit 掩码（与同链 render_volume L491-499、
+            # optimization 链 K线/成交量一致）——'limit_up'/'limit_down' 列由上游
+            # （rendering_mixin.update_chart）在降采样前按全量数据计算并随切片保留；
+            # 降采样后相邻K线并非真实相邻交易日，内部重判的"昨收"会错位导致
+            # 涨停橙/跌停紫与成交量不一致（铁律㉑：所有渲染路径共享列优先分类列）。
+            if 'limit_up' in data.columns and 'limit_down' in data.columns:
+                is_limit_up = data['limit_up'].to_numpy(dtype=bool)
+                is_limit_down = data['limit_down'].to_numpy(dtype=bool)
+            else:
+                is_limit_up, is_limit_down = classify_limit_up_down(
+                    closes, highs, lows, extract_symbol(data))
             up_indices = np.where(is_up & ~is_limit_up & ~is_limit_down)[0]
             down_indices = np.where((~is_up) & ~is_limit_up & ~is_limit_down)[0]
             limit_up_indices = np.where(is_limit_up)[0]
@@ -404,8 +419,14 @@ class MatplotlibRenderer(BaseRenderer):
                         # 切周期/刷行情后 volume_data 停留在旧数据，成交量显示过期值）
                         self._volume_virtual_renderer.set_volume_data(optimized_data, ax)
                         
-                        # 使用虚拟滚动渲染（使用优化后的数据）
-                        success = self._volume_virtual_renderer.render_volume_with_virtual_scroll(
+                        # 使用虚拟滚动渲染（使用优化后的数据）。
+                        # R292-HV：方法名修正——VolumeVirtualRenderer 真实接口为
+                        # render_with_virtual_scroll（volume_virtual_renderer.py L128-133，
+                        # 内部 _render_regular/_render_virtual 分派）。原
+                        # render_volume_with_virtual_scroll 不存在 → 运行时每次必抛
+                        # AttributeError 被 except 吞掉静默降级常规渲染，虚拟滚动
+                        # 成交量优化从未真正生效（本轮修复后首次走虚拟滚动路径）。
+                        success = self._volume_virtual_renderer.render_with_virtual_scroll(
                             ax, optimized_data, style, x, use_datetime_axis)
                         
                         if success:
@@ -470,10 +491,20 @@ class MatplotlibRenderer(BaseRenderer):
                         is_up = closes >= opens
                         categories = np.where(is_up[nonzero_indices], 1, 0).astype(np.int8)
                         if 'high' in optimized_data.columns and 'low' in optimized_data.columns:
-                            is_limit_up, is_limit_down = classify_limit_up_down(
-                                closes, optimized_data['high'].values.astype(np.float64),
-                                optimized_data['low'].values.astype(np.float64),
-                                extract_symbol(optimized_data))
+                            # R292-HV：列优先读取 limit 掩码（与 optimization/chart_renderer.py
+                            # K线/成交量一致）。'limit_up'/'limit_down' 列由上游
+                            # （rendering_mixin.update_chart）在降采样前按全量数据计算，
+                            # 降采样后相邻K线并非真实相邻交易日，内部重判的"昨收"会错位
+                            # 导致涨停橙/跌停紫与K线不一致；列缺失时回退内部判定。
+                            if ('limit_up' in optimized_data.columns
+                                    and 'limit_down' in optimized_data.columns):
+                                is_limit_up = optimized_data['limit_up'].to_numpy(dtype=bool)
+                                is_limit_down = optimized_data['limit_down'].to_numpy(dtype=bool)
+                            else:
+                                is_limit_up, is_limit_down = classify_limit_up_down(
+                                    closes, optimized_data['high'].values.astype(np.float64),
+                                    optimized_data['low'].values.astype(np.float64),
+                                    extract_symbol(optimized_data))
                             # 优先级：涨停 → limit_up_color、跌停 → limit_down_color，与 K 线一致
                             categories = np.where(
                                 is_limit_down[nonzero_indices], 3,

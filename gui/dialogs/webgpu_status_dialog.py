@@ -121,16 +121,25 @@ class WebGPUStatusDialog(BaseDialog):
             webgpu_manager = get_webgpu_manager()
 
             if webgpu_manager and webgpu_manager._initialized:
-                self.webgpu_enabled_label.setText("已启用")
+                self.webgpu_enabled_label.setText("渲染后端已就绪")
                 self.webgpu_enabled_label.setStyleSheet("color: #28a745; font-weight: bold;")
                 self.backend_label.setText(webgpu_manager.current_backend)
-                self.renderer_label.setText("WebGPU渲染器")
+                self.renderer_label.setText("fallback/CPU 渲染器")
 
-                # 获取GPU信息
-                gpu_info = webgpu_manager._webgpu_renderer.get_gpu_info()
+                # 获取GPU信息（WebGPU 假渲染器已移除，改用环境检测的真实 GPU 信息）
+                gpu_info = {}
+                env = getattr(webgpu_manager, '_environment', None)
+                if env is not None:
+                    caps = getattr(env, 'gpu_capabilities', None)
+                    if caps is not None:
+                        gpu_info = {
+                            'name': caps.adapter_name or '未知',
+                            'memory_mb': caps.memory_mb or 0,
+                            'features': caps.webgpu_features or [],
+                        }
                 self.gpu_name_label.setText(gpu_info.get('name', '未知'))
                 self.gpu_memory_label.setText(f"{gpu_info.get('memory_mb', 0)} MB")
-                self.gpu_features_label.setText(", ".join(gpu_info.get('features', [])))
+                self.gpu_features_label.setText(", ".join(gpu_info.get('features', [])) or "无")
 
                 # 获取性能指标
                 stats = webgpu_manager._performance_stats

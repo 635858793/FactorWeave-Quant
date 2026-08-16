@@ -281,6 +281,8 @@ class ChartCanvas(QWidget):
 
             self.stock_data = stock_data
             self.current_stock = stock_data.get('stock_code', '')
+            # R295: 维护当前图表类型（分时图 QTimer 轮询复用；配合下方 chart_type 透传修复）
+            self._current_chart_type = stock_data.get('chart_type', 'K线图')
             logger.debug(f"更新图表: {self.current_stock}")
 
             # 获取OHLCV数据 - 支持多种数据格式
@@ -376,9 +378,11 @@ class ChartCanvas(QWidget):
                     'stock_code': self.current_stock,
                     'indicators_data': stock_data.get('indicators_data', stock_data.get('indicators', {})),
                     'title': stock_data.get('stock_name', self.current_stock),
-                    # R277 修复：透传图表类型（K线图/分时图/美国线/收盘价），
-                    # 原实现在此重建字典时丢弃 chart_type，导致渲染层恒为K线图
-                    'chart_type': getattr(self, '_current_chart_type', 'K线图')
+                    # R295 修复：透传图表类型（K线图/分时图/美国线/收盘价）。
+                    # 原实现取 getattr(self, '_current_chart_type', 'K线图')，而 ChartCanvas
+                    # 从未赋值该属性（全文件该属性仅存在于 MiddlePanel），恒为 'K线图'，
+                    # 覆盖掉上层传入的分时图 chart_type（R294 分时渲染分支永远走不到）。
+                    'chart_type': stock_data.get('chart_type', 'K线图')
                 }
                 # R279：若上层数据携带形态信号则透传（供 rendering_mixin 重绘形态标识）
                 if 'pattern_signals' in stock_data:
@@ -737,6 +741,14 @@ class MiddlePanel(BasePanel):
 
         super().__init__(parent, coordinator, **kwargs)
 
+        # R295: 分时图实时刷新定时器（3s 轮询，回调见 _refresh_intraday_realtime）。
+        # 切到分时图且数据就绪后启动；切到其他图表类型/换股加载期间停止。
+        self._intraday_timer = QTimer(self)
+        self._intraday_timer.setInterval(3000)
+        self._intraday_timer.timeout.connect(self._refresh_intraday_realtime)
+        # 分时实时接口未就绪时回退 _load_chart_data 的节流时间戳（避免轮询风暴）
+        self._last_intraday_fallback_ts = 0.0
+
     def _create_widgets(self) -> None:
         """创建UI组件"""
              # 创建主布局
@@ -992,6 +1004,8 @@ class MiddlePanel(BasePanel):
                     # 仍然尝试更新图表以显示"无数据"消息
                     chart_data = self._prepare_chart_data(data)
                     self.chart_canvas.update_chart(chart_data)
+                    # R295: 数据就绪后按图表类型同步分时轮询
+                    self._sync_intraday_timer()
                     return
                 else:
                     logger.debug(f"K线数据验证通过，DataFrame形状: {kdata.shape}")
@@ -1001,6 +1015,8 @@ class MiddlePanel(BasePanel):
                     self._update_status("无可用K线数据")
                     chart_data = self._prepare_chart_data(data)
                     self.chart_canvas.update_chart(chart_data)
+                    # R295: 数据就绪后按图表类型同步分时轮询
+                    self._sync_intraday_timer()
                     return
                 else:
                     logger.debug(f"K线数据验证通过，列表长度: {len(kdata)}")
@@ -1032,6 +1048,9 @@ class MiddlePanel(BasePanel):
             logger.info("调用chart_canvas.update_chart")
             self.chart_canvas.update_chart(chart_data)
             logger.info("=== UIDataReadyEvent处理完成 ===")
+
+            # R295: 数据就绪后按图表类型同步分时轮询（分时图启动，其余停止）
+            self._sync_intraday_timer()
 
         except Exception as e:
             logger.error(f"处理UIDataReadyEvent事件失败: {e}", exc_info=True)
@@ -1130,6 +1149,13 @@ class MiddlePanel(BasePanel):
                 # 仅保存参数设置，不发出警告
                 # logger.warning("无法加载图表数据：股票代码为空")
                 return
+
+            # R295: 换股/切周期加载期间停止分时轮询，避免轮询结果覆盖新加载数据
+            # （_on_ui_data_ready 数据就绪后按图表类型恢复轮询）
+            # __dict__.get 防御：QObject.__getattr__ 在未初始化实例上抛 RuntimeError
+            _timer = self.__dict__.get('_intraday_timer')
+            if _timer is not None:
+                _timer.stop()
 
             logger.info(f"加载图表数据：{self._current_stock_code}, 周期：{self._current_period}, 时间范围：{self._current_time_range}, 图表类型：{self._current_chart_type}")
 
@@ -1542,11 +1568,148 @@ class MiddlePanel(BasePanel):
             logger.info(f"图表类型变更: {chart_type}")
             self._current_chart_type = chart_type
 
+            # R295: 分时图启动实时轮询定时器，其他图表类型停止
+            self._sync_intraday_timer()
+
+            # R293-G2: 分时图强制 1min 周期——分时图数据源必须为当日 1min K线，
+            # 若停留在日线等非分钟周期，分时分支无当日分钟数据无法成线。
+            # 联动当前周期为'分时'(1min) 并同步周期下拉框（屏蔽信号，避免
+            # _on_period_changed 二次触发 _load_chart_data 造成重复加载）。
+            if chart_type == '分时图':
+                from core.plugin_types import Period
+                self._current_period = Period.get_display_name(Period.MIN1.value)  # '分时'
+                period_combo = self.get_widget('period_combo')
+                if period_combo:
+                    index = period_combo.findText(self._current_period)
+                    if index >= 0:
+                        blocked = period_combo.blockSignals(True)
+                        try:
+                            period_combo.setCurrentIndex(index)
+                        finally:
+                            period_combo.blockSignals(blocked)
+
             # 加载图表数据
             self._load_chart_data()
 
         except Exception as e:
             logger.error(f"处理图表类型变更失败: {e}", exc_info=True)
+
+    def _sync_intraday_timer(self) -> None:
+        """R295: 按当前图表类型同步分时轮询定时器（分时图启动，其余停止）
+
+        防御性读取用 self.__dict__.get（QObject.__getattr__ 在未初始化实例上
+        抛 RuntimeError 而非 AttributeError，getattr 默认值不生效；__dict__
+        是纯 Python 层，object.__new__ 构造的旧实例/测试 stub 安全返回 None）。
+        """
+        timer = self.__dict__.get('_intraday_timer')
+        if timer is None:
+            return
+        if self.__dict__.get('_current_chart_type') == '分时图':
+            if not timer.isActive():
+                timer.start()
+        else:
+            timer.stop()
+
+    @staticmethod
+    def _convert_intraday_to_kline(intraday_df) -> Optional[pd.DataFrame]:
+        """R295: 分时数据 → 类1min K线 DataFrame（零渲染层改动复用分时渲染分支）
+
+        Args:
+            intraday_df: 分时数据（index=DatetimeIndex，列 [price, vol, amount]，
+                兼容含 datetime 列的变体）
+
+        Returns:
+            列 [datetime, open, high, low, close, volume] 的 DataFrame；
+            输入 attrs 含 prev_close（R295-VWAP V-02 昨收精确化，腾讯分时
+            qt[4] 昨收透传）时附加 prev_close 列（每行同值 float），无 attrs
+            时输出保持原列（渲染侧回退历史 close 近似）；
+            空/无法定位时刻时返回 None
+        """
+        try:
+            if intraday_df is None or len(intraday_df) == 0:
+                return None
+            df = intraday_df.copy()
+            if 'datetime' not in df.columns:
+                if isinstance(df.index, pd.DatetimeIndex):
+                    df['datetime'] = df.index
+                else:
+                    return None  # 无法定位时刻，拒绝转换
+            price = pd.to_numeric(df['price'], errors='coerce')
+            vol_col = 'vol' if 'vol' in df.columns else 'volume'
+            vol = (pd.to_numeric(df[vol_col], errors='coerce').fillna(0)
+                   if vol_col in df.columns else pd.Series(0.0, index=df.index))
+            out = pd.DataFrame({
+                'datetime': pd.to_datetime(df['datetime']),
+                'open': price, 'high': price, 'low': price, 'close': price,
+                'volume': vol,
+            })
+            # R295-VWAP V-02: 昨收精确化 —— 从输入 attrs 透传 prev_close 列
+            # (每行同值 float, 渲染侧分时昨收参考线优先读此列; 无 attrs 保持原列)
+            prev_close = intraday_df.attrs.get('prev_close')
+            if prev_close is not None:
+                out['prev_close'] = float(prev_close)
+            return out.dropna(subset=['close'])
+        except Exception as e:
+            logger.debug(f"分时数据转类K线失败: {e}")
+            return None
+
+    def _refresh_intraday_realtime(self) -> None:
+        """R295: 分时图实时刷新（QTimer 3s 轮询回调）
+
+        优先 unified_data_manager.get_intraday_data(symbol)（实时分时 240 点）；
+        接口未就绪时节流回退 _load_chart_data（1min K线聚合路径）；接口返回空/
+        异常时静默跳过（保持上次渲染）。任何异常都不得冒泡到 Qt 事件循环。
+        防御性读取统一用 self.__dict__.get（QObject.__getattr__ 在未初始化
+        实例上抛 RuntimeError 而非 AttributeError）。
+        """
+        try:
+            if self.__dict__.get('_current_chart_type') != '分时图':
+                return
+            if not self.__dict__.get('_current_stock_code'):
+                return
+            # 防抖：数据加载进行中不覆盖（ChartCanvas.is_loading 由骨架屏维护）
+            canvas = self.__dict__.get('chart_canvas')
+            if canvas is not None and getattr(canvas, 'is_loading', False):
+                return
+
+            intraday_df = None
+            fallback = False
+            try:
+                from core.services.unified_data_manager import get_unified_data_manager
+                data_manager = get_unified_data_manager()
+                if data_manager is not None and hasattr(data_manager, 'get_intraday_data'):
+                    intraday_df = data_manager.get_intraday_data(self._current_stock_code)
+                else:
+                    fallback = True  # 实时分时接口未就绪 → 回退 1min K线聚合
+            except Exception as e:
+                logger.debug(f"分时实时数据获取失败，跳过本次刷新: {e}")
+
+            if fallback:
+                # 节流：30s 内最多回退一次，避免接口缺失时轮询风暴
+                now = time.time()
+                if now - self.__dict__.get('_last_intraday_fallback_ts', 0.0) > 30.0:
+                    self._last_intraday_fallback_ts = now
+                    self._load_chart_data()
+                return
+
+            if intraday_df is None or len(intraday_df) == 0:
+                logger.debug(f"分时实时数据为空（{self._current_stock_code}），保持上次渲染")
+                return
+
+            kline_df = self._convert_intraday_to_kline(intraday_df)
+            if kline_df is None or kline_df.empty:
+                return
+
+            chart_data = {
+                'kline_data': kline_df,
+                'stock_code': self._current_stock_code,
+                'title': self.__dict__.get('_current_stock_name', ''),
+                'chart_type': '分时图',
+                'period': '分时',
+            }
+            self.chart_canvas.update_chart(chart_data)
+        except Exception as e:
+            logger.debug(f"分时图实时刷新失败: {e}")
 
     def _get_all_indicator_names(self) -> list:
         """获取全量指标列表（内置 + TA-Lib 动态枚举 + DB 指标表全量，按 name 去重内置优先）
@@ -2061,6 +2224,11 @@ class MiddlePanel(BasePanel):
     def _do_dispose(self) -> None:
         """清理资源"""
         try:
+            # R295: 停止分时实时轮询定时器，避免面板销毁后回调残留
+            _timer = self.__dict__.get('_intraday_timer')
+            if _timer is not None:
+                _timer.stop()
+
             # 停止加载线程
             if hasattr(self, '_loader_thread') and self._loader_thread and self._loader_thread.isRunning():
                 logger.info("Stopping chart data loader thread...")

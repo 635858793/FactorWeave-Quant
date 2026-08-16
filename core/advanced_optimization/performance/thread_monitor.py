@@ -27,13 +27,6 @@ try:
 except ImportError:
     concurrent.futures = None
 
-try:
-    from core.webgpu.webgpu_renderer import WebGPURenderer, GPUResourcePool
-    WEBGPU_AVAILABLE = True
-except ImportError:
-    WEBGPU_AVAILABLE = False
-    logger.warning("WebGPU模块不可用，线程监控功能将受限")
-
 class ThreadStatus(Enum):
     """线程状态"""
     IDLE = "idle"
@@ -558,7 +551,11 @@ class ThreadMonitor:
             }
     
     def collect_webgpu_thread_metrics(self) -> Dict[str, Any]:
-        """收集WebGPU相关线程指标"""
+        """收集WebGPU相关线程指标
+
+        WebGPU 假实现已按架构决策移除，self.webgpu_renderer 恒为 None，
+        恒走无 GPU 线程分支，直接返回全 0 指标。
+        """
         if not self.webgpu_renderer:
             return {
                 'webgpu_render_threads': 0,
@@ -566,34 +563,12 @@ class ThreadMonitor:
                 'webgpu_upload_threads': 0,
                 'webgpu_thread_efficiency': 0.0
             }
-        
-        try:
-            # 估算WebGPU相关线程数
-            webgpu_threads = {
-                'webgpu_render_threads': 1,  # 渲染线程
-                'webgpu_compute_threads': 2,  # 计算线程
-                'webgpu_upload_threads': 1    # 上传线程
-            }
-            
-            # 计算WebGPU线程效率
-            total_webgpu_threads = sum(webgpu_threads.values())
-            total_system_threads = max(1, self.thread_metrics.total_threads_count)
-            webgpu_efficiency = min(1.0, total_webgpu_threads / total_system_threads * 2.0)
-            
-            return {
-                **webgpu_threads,
-                'webgpu_thread_efficiency': webgpu_efficiency
-            }
-            
-        except Exception as e:
-            logger.error(f"收集WebGPU线程指标失败: {e}")
-            self.stats['error_count'] += 1
-            return {
-                'webgpu_render_threads': 0,
-                'webgpu_compute_threads': 0,
-                'webgpu_upload_threads': 0,
-                'webgpu_thread_efficiency': 0.0
-            }
+        return {
+            'webgpu_render_threads': 0,
+            'webgpu_compute_threads': 0,
+            'webgpu_upload_threads': 0,
+            'webgpu_thread_efficiency': 0.0
+        }
     
     def calculate_thread_quality_metrics(self) -> Dict[str, float]:
         """计算线程质量指标"""

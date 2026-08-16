@@ -36,10 +36,10 @@ GPU_BACKEND_ENUM = None
 
 try:
     from ..webgpu.enhanced_gpu_detection import GPUDetector, GPUAdapter, PowerPreference, GPUType
-    from ..webgpu.webgpu_renderer import WebGPUContext, GPURendererConfig, GPUBackend
+    from ..webgpu.webgpu_renderer import GPUBackend
     WEBGPU_AVAILABLE = True
     GPU_DETECTOR_CLASS = GPUDetector
-    WEBGPU_CONTEXT_CLASS = WebGPUContext
+    WEBGPU_CONTEXT_CLASS = None  # WebGPU 假上下文已按架构决策移除
     GPU_BACKEND_ENUM = GPUBackend
 except ImportError as e:
     logger.warning(f"WebGPU模块导入失败: {e}")
@@ -150,7 +150,7 @@ class GPUAccelerationManager(BaseService):
         self._status = GPUAccelerationStatus.DISABLED
         self._gpu_info: List[GPUInfo] = []
         self._active_gpu: Optional[GPUInfo] = None
-        self._webgpu_context: Optional[WebGPUContext] = None
+        self._webgpu_context: Optional[Any] = None
         self._gpu_detector: Optional[GPUDetector] = None
         
         # 性能统计
@@ -306,46 +306,15 @@ class GPUAccelerationManager(BaseService):
             self._gpu_info = []
     
     def _initialize_webgpu_context(self) -> None:
-        """初始化WebGPU上下文"""
+        """初始化WebGPU上下文
+
+        WebGPU 假上下文已按架构决策移除，不再创建任何 GPU 上下文；
+        保留真实 GPU 检测信息（_gpu_info）用于状态展示与配置，渲染统一走 CPU 路径。
+        """
         if not WEBGPU_AVAILABLE or not self._gpu_info:
             return
-        
-        try:
-            # 创建渲染器配置
-            backend_map = {
-                "auto": GPUBackend.MODERNGL,
-                "opengl": GPUBackend.OPENGL,
-                "moderngl": GPUBackend.MODERNGL,
-                "cuda": GPUBackend.CUDA,
-                "cpu": GPUBackend.CPU
-            }
-            
-            backend = backend_map.get(
-                self._config.preferred_backend.lower(), 
-                GPUBackend.MODERNGL
-            )
-            
-            renderer_config = GPURendererConfig(
-                backend_type=backend,
-                preferred_backend=backend,
-                fallback_to_opengl=self._config.auto_fallback_on_error,
-                fallback_to_cpu=self._config.auto_fallback_on_error,
-                gpu_memory_limit_mb=self._config.memory_limit_mb
-            )
-            
-            # 创建WebGPU上下文
-            self._webgpu_context = WebGPUContext(renderer_config)
-            
-            # 初始化上下文
-            if self._webgpu_context.initialize():
-                logger.info(f"WebGPU上下文初始化成功，后端: {backend.value}")
-            else:
-                logger.warning("WebGPU上下文初始化失败")
-                self._webgpu_context = None
-                
-        except Exception as e:
-            logger.error(f"WebGPU上下文初始化异常: {e}")
-            self._webgpu_context = None
+        logger.info("WebGPU 假上下文已移除，GPU 检测信息保留用于展示，渲染统一走 CPU 路径")
+        self._webgpu_context = None
     
     def _select_active_gpu(self) -> None:
         """选择活动GPU"""

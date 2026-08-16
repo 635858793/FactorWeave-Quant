@@ -216,7 +216,11 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
         try:
             if hasattr(self, 'event_bus') and self.event_bus:
                 self.event_bus.subscribe(PatternSignalsDisplayEvent, self._handle_pattern_signals_display)
-                logger.info("成功订阅 PatternSignalsDisplayEvent")
+                # HV6：tick 增量渲染（bar 内更新末根 K 线，避免每 tick 全量重绘）
+                if hasattr(self, '_on_tick_event'):
+                    from core.events.event_bus import TickDataEvent
+                    self.event_bus.subscribe(TickDataEvent, self._on_tick_event)
+                logger.info("成功订阅 PatternSignalsDisplayEvent + TickDataEvent")
             else:
                 logger.debug("event_bus 不可用，跳过事件订阅（独立模式运行）")
                 # 在独立模式下，不需要事件总线
@@ -739,7 +743,8 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
                     step = max(1, n // 8)
                     xticks = np.arange(0, n, step)
                     xticklabels = [self._safe_format_date(
-                        self.current_kdata.iloc[i], i, self.current_kdata) for i in xticks]
+                        self.current_kdata.iloc[i], i, self.current_kdata,
+                        getattr(self, 'current_period', None)) for i in xticks]
                     self.price_ax.set_xticks(xticks)
                     if len(xticks) == len(xticklabels):
                         self.price_ax.set_xticklabels(
@@ -1197,6 +1202,9 @@ class ChartWidget(QWidget, BaseMixin, UIMixin, RenderingMixin, IndicatorMixin,
         try:
             if hasattr(self, 'event_bus') and self.event_bus:
                 self.event_bus.unsubscribe(PatternSignalsDisplayEvent, self._handle_pattern_signals_display)
+                if hasattr(self, '_on_tick_event'):
+                    from core.events.event_bus import TickDataEvent
+                    self.event_bus.unsubscribe(TickDataEvent, self._on_tick_event)
         except Exception as e:
             logger.error(f"取消事件订阅失败: {e}")
         if hasattr(self, 'renderer') and self.renderer:

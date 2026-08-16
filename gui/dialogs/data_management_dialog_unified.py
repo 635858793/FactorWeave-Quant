@@ -282,8 +282,11 @@ class UnifiedDataManagementDialog(BaseDialog):
         sidebar_layout.addWidget(version_label)
         
         parent_layout.addWidget(sidebar)
-        
-        self.nav_buttons[0].click()
+
+        # R293 修复: 原 nav_buttons[0].click() 在 _create_content_area 之前同步触发
+        # clicked 信号 → _switch_section 访问尚未创建的 self.stacked_widget (L332)
+        # 抛 AttributeError; 改用 setChecked 仅设置选中态，默认页(index 0)即概览
+        self.nav_buttons[0].setChecked(True)
     
     def _create_nav_button(self, icon: str, text: str, section_id: str) -> QPushButton:
         """创建导航按钮"""

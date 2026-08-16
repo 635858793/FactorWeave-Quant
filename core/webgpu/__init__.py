@@ -15,7 +15,7 @@ from .compatibility import GPUCompatibilityChecker
 from .fallback import FallbackRenderer, RenderBackend
 from .manager import WebGPUManager, get_webgpu_manager, WebGPUConfig, render_chart_webgpu, initialize_webgpu_manager
 from .crosshair_engine import GPUCrosshairEngine, CrosshairState, CrosshairStyle, CrosshairConfig
-from .webgpu_renderer import GPURendererConfig, WebGPUContext, GPUResourcePool, create_webgpu_renderer, create_optimized_gpu_config, GPUBackend, WebGPURenderer, WebGPURenderer as OptimizedWebGPURenderer
+from .webgpu_renderer import GPURendererConfig, GPUBackend
 
 __all__ = [
     'WebGPUEnvironment',
@@ -34,11 +34,5 @@ __all__ = [
     'CrosshairStyle',
     'CrosshairConfig',
     'GPURendererConfig',
-    'WebGPUContext',
-    'GPUResourcePool',
     'GPUBackend',
-    'WebGPURenderer',  # 添加WebGPURenderer导出
-    'OptimizedWebGPURenderer',
-    'create_webgpu_renderer',
-    'create_optimized_gpu_config'
 ]

@@ -15,9 +15,8 @@ import numpy as np
 from typing import Dict, Any, Optional, List, Callable
 from dataclasses import dataclass
 
-from .environment import WebGPUEnvironment, get_webgpu_environment, GPUSupportLevel
+from .environment import WebGPUEnvironment, get_webgpu_environment
 from .fallback import FallbackRenderer, RenderBackend
-from .webgpu_renderer import WebGPURenderer, GPUResourcePool, GPUBackend
 from .compatibility import GPUCompatibilityChecker, CompatibilityReport, CompatibilityLevel
 
 
@@ -29,24 +28,6 @@ class WebGPUConfig:
     auto_fallback_on_error: bool = True
     max_fallback_attempts: int = 3
 
-
-def _map_support_level_to_backend(support_level: GPUSupportLevel) -> GPUBackend:
-    """将GPUSupportLevel映射到GPUBackend
-
-    Args:
-        support_level: GPU支持级别
-
-    Returns:
-        对应的GPU后端类型
-    """
-    mapping = {
-        GPUSupportLevel.WEBGPU: GPUBackend.MODERNGL,
-        GPUSupportLevel.WEBGL: GPUBackend.OPENGL,
-        GPUSupportLevel.NATIVE: GPUBackend.OPENGL,
-        GPUSupportLevel.BASIC: GPUBackend.CPU,
-        GPUSupportLevel.NONE: GPUBackend.CPU,
-    }
-    return mapping.get(support_level, GPUBackend.CPU)
 
 class WebGPUManager:
     """WebGPU管理器
@@ -63,7 +44,6 @@ class WebGPUManager:
 
         # 核心组件
         self._environment = None
-        self._webgpu_renderer = None  # 新增：真正的WebGPU渲染器
         self._fallback_renderer = None
         self._compatibility_checker = GPUCompatibilityChecker()
         self._compatibility_report = None
@@ -144,40 +124,18 @@ class WebGPUManager:
                         recommendations=["默认GPU支持配置"]
                     )
 
-                # 3. 初始化WebGPU渲染器（主要渲染器）
-                logger.info("初始化WebGPU渲染器...")
-                from .webgpu_renderer import WebGPURenderer, GPURendererConfig
-
-                backend_type = _map_support_level_to_backend(self._compatibility_report.recommended_backend)
-                gpu_config = GPURendererConfig(
-                    backend_type=backend_type,
-                    preferred_backend=backend_type
-                )
-                
-                self._webgpu_renderer = WebGPURenderer(gpu_config)
-                init_config = {'compatibility_report': self._compatibility_report}
-                webgpu_success = self._webgpu_renderer.initialize(init_config)
-                
-                if webgpu_success:
-                    logger.info(f"WebGPU渲染器初始化成功，使用后端: {self._webgpu_renderer.backend_type.value}")
-                    self._performance_stats['current_backend'] = self._webgpu_renderer.backend_type.value
-                else:
-                    logger.warning("⚠️ WebGPU渲染器初始化失败，将使用降级渲染器")
-                    self._performance_stats['current_backend'] = "fallback"
-
-                # 5. 初始化降级渲染器
+                # 3. 初始化降级渲染器（WebGPU 假渲染器已按架构决策移除，统一走 fallback/CPU 路径）
                 if self.config.enable_fallback:
                     self._fallback_renderer = FallbackRenderer()
                     render_context = self._environment.create_render_context()
 
                     if not self._fallback_renderer.initialize(self._compatibility_report, render_context):
-                        logger.error("降级渲染器初始化失败，尝试使用WebGPU渲染器作为备选")
-                        if not webgpu_success:
-                            logger.error("没有可用的渲染器，初始化失败")
-                            self._call_initialization_callbacks(False)
-                            return False
+                        logger.error("降级渲染器初始化失败，没有可用的渲染器")
+                        self._call_initialization_callbacks(False)
+                        return False
                     else:
                         logger.info("降级渲染器初始化成功")
+                        self._performance_stats['current_backend'] = self._fallback_renderer.get_current_backend()
 
                 self._initialized = True
 
@@ -251,22 +209,7 @@ class WebGPUManager:
         start_time = time.time()
         
         try:
-            # 优先使用WebGPU渲染器
-            if self._webgpu_renderer and self._webgpu_renderer.initialized:
-                logger.info(f"使用WebGPU渲染器执行: {method_name}")
-                method = getattr(self._webgpu_renderer, method_name)
-                success = method(*args, **kwargs)
-                
-                if success:
-                    # 更新性能统计
-                    render_time = time.time() - start_time
-                    self._update_performance_stats(True, render_time)
-                    logger.info(f"WebGPU渲染成功: {method_name} ({render_time:.3f}s)")
-                    return True
-                else:
-                    logger.warning(f"⚠️ WebGPU渲染失败: {method_name}")
-            
-            # 如果WebGPU渲染器不可用或失败，使用降级渲染器
+            # WebGPU 假渲染器已移除，统一走 fallback 渲染器（CPU 路径）
             if self._fallback_renderer:
                 logger.info(f"使用降级渲染器执行: {method_name}")
                 method = getattr(self._fallback_renderer, method_name)
@@ -369,11 +312,7 @@ class WebGPUManager:
         if not self._initialized:
             return "uninitialized"
 
-        # 优先从WebGPU渲染器获取
-        if self._webgpu_renderer and hasattr(self._webgpu_renderer, 'backend_type'):
-            return self._webgpu_renderer.backend_type.value
-
-        # 从降级渲染器获取
+        # 从降级渲染器获取（WebGPU 假渲染器已移除，恒为 fallback/CPU）
         if self._fallback_renderer:
             try:
                 return self._fallback_renderer.get_current_backend()
@@ -497,18 +436,7 @@ class WebGPUManager:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # 清理WebGPU渲染器资源
-        if self._webgpu_renderer:
-            try:
-                if hasattr(self._webgpu_renderer, 'release'):
-                    self._webgpu_renderer.release()
-                elif hasattr(self._webgpu_renderer, 'clear'):
-                    self._webgpu_renderer.clear()
-                logger.info("WebGPU渲染器资源已清理")
-            except Exception as e:
-                logger.warning(f"清理WebGPU渲染器资源时出错: {e}")
-
-        # 清理降级渲染器资源
+        # 清理降级渲染器资源（WebGPU 假渲染器已移除，无需清理）
         if self._fallback_renderer:
             try:
                 self._fallback_renderer.clear()

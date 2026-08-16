@@ -754,10 +754,6 @@ class MainWindowCoordinator(BaseCoordinator):
             logger.error(f"处理字体大小变更失败: {e}")
 
     # 工具菜单方法
-    def _on_data_export(self) -> None:
-        """数据导出（别名方法）"""
-        self._on_export_data()
-
     def _on_settings(self) -> None:
         """系统设置"""
         try:
@@ -903,11 +899,17 @@ FactorWeave-Quant  2.0 (重构版本)
         try:
             # 使用新的真实数据UI
             from gui.dialogs.distributed_node_monitor_dialog import DistributedNodeMonitorDialog
-            from core.containers import get_service_container
 
-            # 获取分布式服务
-            container = get_service_container()
-            distributed_service = container.get('distributed_service')
+            # R294 修复: service_container.get 在服务未注册时抛 ValueError 而非返回
+            # None(service_container.py L154-156 resolve_by_name 抛错)，原 L907 的
+            # "未初始化"警告分支不可达(死代码)；改为 try/except 安全获取，与
+            # menu_bar.py show_distributed_monitor 的 R293 修复(L1174-1177)一致。
+            try:
+                from core.containers import get_service_container
+                container = get_service_container()
+                distributed_service = container.get('distributed_service')
+            except Exception:
+                distributed_service = None
 
             if not distributed_service:
                 QMessageBox.warning(
@@ -1098,24 +1100,6 @@ FactorWeave-Quant  2.0 (重构版本)
         logger.info("插件管理对话框已关闭，清理引用")
         if hasattr(self, '_plugin_manager_dialog'):
             self._plugin_manager_dialog = None
-
-    def _on_plugin_market(self) -> None:
-        """插件市场"""
-        try:
-            from gui.dialogs.enhanced_plugin_market_dialog import EnhancedPluginMarketDialog
-
-            # 获取插件管理器
-            plugin_manager = self._service_container.resolve(PluginManager)
-
-            dialog = EnhancedPluginMarketDialog(
-                plugin_manager, self._main_window)
-            self.center_dialog(dialog)
-            dialog.exec_()
-
-        except Exception as e:
-            logger.error(f"插件市场失败: {e}")
-            QMessageBox.critical(self._main_window, "错误",
-                                 f"打开插件市场对话框失败: {str(e)}")
 
     def _on_indicator_market(self) -> None:
         """指标市场"""
@@ -1732,7 +1716,7 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_single_stock_quality_check(self) -> None:
         """单股质量检查"""
         try:
-            from gui.dialogs.data_quality_dialog import DataQualityDialog
+            # R294 清理: 原函数内局部导入与 L44 模块级导入重复，删除（模块级已提供）
 
             # DataQualityDialog 接受 stock_code 参数，不是 mode 参数
             dialog = DataQualityDialog(self._main_window, stock_code=None)
@@ -1747,7 +1731,7 @@ FactorWeave-Quant  2.0 (重构版本)
     def _on_batch_quality_check(self) -> None:
         """批量质量检查"""
         try:
-            from gui.dialogs.data_quality_dialog import DataQualityDialog
+            # R294 清理: 原函数内局部导入与 L44 模块级导入重复，删除（模块级已提供）
 
             # 批量质量检查也使用相同的对话框
             dialog = DataQualityDialog(self._main_window, stock_code=None)
@@ -1760,8 +1744,8 @@ FactorWeave-Quant  2.0 (重构版本)
                                  f"打开批量质量检查对话框失败: {str(e)}")
 
     # 缓存管理方法
-    def _on_clear_data_cache(self) -> None:
-        """清理数据缓存"""
+    def _do_clear_data_cache(self) -> None:
+        """执行清理数据缓存（无确认，供 _on_clear_data_cache / _on_clear_all_cache 复用）"""
         try:
             # 清理统一缓存服务
             try:
@@ -1793,15 +1777,13 @@ FactorWeave-Quant  2.0 (重构版本)
             if analysis_service and hasattr(analysis_service, 'clear_cache'):
                 analysis_service.clear_cache()
 
-            QMessageBox.information(self._main_window, "成功", "数据缓存已清理")
             logger.info("Data cache cleared")
-
         except Exception as e:
             logger.error(f"Failed to clear data cache: {e}")
-            QMessageBox.critical(self._main_window, "错误", f"清理数据缓存失败: {e}")
+            raise
 
-    def _on_clear_negative_cache(self) -> None:
-        """清理负缓存"""
+    def _do_clear_negative_cache(self) -> None:
+        """执行清理负缓存（无确认，供 _on_clear_negative_cache / _on_clear_all_cache 复用）"""
         try:
             # 获取股票服务
             stock_service = self.service_container.get_service(StockService)
@@ -1813,25 +1795,52 @@ FactorWeave-Quant  2.0 (重构版本)
             if left_panel and hasattr(left_panel, '_no_data_cache'):
                 left_panel._no_data_cache.clear()
 
-            QMessageBox.information(self._main_window, "成功", "负缓存已清理")
             logger.info("Negative cache cleared")
-
         except Exception as e:
             logger.error(f"Failed to clear negative cache: {e}")
+            raise
+
+    def _on_clear_data_cache(self) -> None:
+        """清理数据缓存"""
+        # R294 修复: 破坏性操作加二次确认（对齐 cache_status_monitor.py L1164-1167 惯例）
+        reply = QMessageBox.question(
+            self._main_window, "确认清理", "确定要清理数据缓存吗？",
+            QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            self._do_clear_data_cache()
+            QMessageBox.information(self._main_window, "成功", "数据缓存已清理")
+        except Exception as e:
+            QMessageBox.critical(self._main_window, "错误", f"清理数据缓存失败: {e}")
+
+    def _on_clear_negative_cache(self) -> None:
+        """清理负缓存"""
+        # R294 修复: 破坏性操作加二次确认
+        reply = QMessageBox.question(
+            self._main_window, "确认清理", "确定要清理负缓存吗？",
+            QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            self._do_clear_negative_cache()
+            QMessageBox.information(self._main_window, "成功", "负缓存已清理")
+        except Exception as e:
             QMessageBox.critical(self._main_window, "错误", f"清理负缓存失败: {e}")
 
     def _on_clear_all_cache(self) -> None:
         """清理所有缓存"""
+        # R294 修复: 一次确认，级联调用私有执行方法（避免连环弹三次确认框）
+        reply = QMessageBox.question(
+            self._main_window, "确认清理", "确定要清理所有缓存吗？",
+            QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
         try:
-            # 清理数据缓存
-            self._on_clear_data_cache()
-
-            # 清理负缓存
-            self._on_clear_negative_cache()
-
+            self._do_clear_data_cache()
+            self._do_clear_negative_cache()
             QMessageBox.information(self._main_window, "成功", "所有缓存已清理")
             logger.info("All cache cleared")
-
         except Exception as e:
             logger.error(f"Failed to clear all cache: {e}")
             QMessageBox.critical(self._main_window, "错误", f"清理所有缓存失败: {e}")
@@ -2536,7 +2545,11 @@ FactorWeave-Quant  2.0 (重构版本)
 
                         if db_service:
                             with db_service.get_connection("analytics_duckdb") as conn:
-                                conn.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (idx INTEGER)")
+                                # R293 修复: 原 CREATE TABLE IF NOT EXISTS + INSERT 为追加语义，
+                                # 与 CSV 路径 CREATE OR REPLACE 覆盖语义不一致，重复导入旧数据累积;
+                                # 统一为覆盖语义
+                                conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+                                conn.execute(f"CREATE TABLE {table_name} (idx INTEGER)")
                                 for col in columns:
                                     col_safe = col.replace(' ', '_').replace('(', '').replace(')', '').replace('"', '""')
                                     try:
@@ -2591,6 +2604,14 @@ FactorWeave-Quant  2.0 (重构版本)
             # 创建数据管理中心对话框
             self._data_management_dialog = UnifiedDataManagementDialog(self._main_window)
 
+            # R293 修复: BaseDialog 设 WA_DeleteOnClose (base_dialog.py L160)，用户关闭后
+            # C++ 对象被删除但 Python 引用仍存，再次打开时 L2585 命中旧引用
+            # raise_() 抛 "wrapped C/C++ object has been deleted" 且永远无法重开;
+            # destroyed 信号在 C++ 对象删除时同步触发，重置引用使 L2585 检查正确走重建分支
+            self._data_management_dialog.destroyed.connect(
+                lambda: setattr(self, '_data_management_dialog', None)
+            )
+
             # R244 修复: UnifiedDataManagementDialog 只有 data_imported/data_exported/
             # database_updated 信号(data_management_dialog_unified.py L197-199)，
             # 原 data_downloaded/source_configured 信号已不存在，删除无效连接。
@@ -2603,104 +2624,6 @@ FactorWeave-Quant  2.0 (重构版本)
         except Exception as e:
             logger.error(f"打开数据管理中心失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法打开数据管理中心: {e}")
-
-    def _on_data_downloaded_from_center(self, symbol: str, source: str):
-        """处理从数据管理中心下载的数据"""
-        try:
-            logger.info(f"数据下载完成: {symbol} (来源: {source})")
-            # 可以在这里添加数据下载后的处理逻辑
-            # 比如刷新图表、更新状态等
-        except Exception as e:
-            logger.error(f"处理下载数据失败: {e}")
-
-    def _on_source_configured_from_center(self, source_name: str, config: dict):
-        """处理从数据管理中心配置的数据源"""
-        try:
-            logger.info(f"数据源配置更新: {source_name}")
-            # 可以在这里添加数据源配置更新后的处理逻辑
-        except Exception as e:
-            logger.error(f"处理数据源配置失败: {e}")
-
-    # ==================== DuckDB专业数据导入功能 ====================
-
-    def _on_duckdb_import(self) -> None:
-        """打开DuckDB专业数据导入界面（重定向到增强版）"""
-        try:
-            # 重定向到增强版数据导入系统
-            from gui.enhanced_data_import_launcher import EnhancedDataImportMainWindow
-
-            # 创建增强版数据导入窗口
-            self.enhanced_import_window = EnhancedDataImportMainWindow()
-            self.enhanced_import_window.show()
-
-            logger.info("打开增强版DuckDB专业数据导入系统")
-
-        except ImportError as e:
-            QMessageBox.warning(
-                self._main_window,
-                "功能不可用",
-                f"增强版数据导入UI组件加载失败:\n{str(e)}\n\n请确保所有依赖项已正确安装。"
-            )
-            logger.error(f"增强版数据导入UI组件加载失败: {e}")
-
-        except Exception as e:
-            QMessageBox.critical(
-                self._main_window,
-                "错误",
-                f"启动增强版数据导入系统失败:\n{str(e)}"
-            )
-            logger.error(f"启动增强版数据导入系统失败: {e}")
-
-    def _on_enhanced_import(self) -> None:
-        """打开增强版数据导入系统"""
-        try:
-            # 启动增强版数据导入系统
-            from gui.enhanced_data_import_launcher import EnhancedDataImportMainWindow
-
-            # 创建增强版数据导入窗口
-            self.enhanced_import_window = EnhancedDataImportMainWindow()
-            self.enhanced_import_window.show()
-
-            logger.info("启动增强版数据导入系统")
-
-        except ImportError as e:
-            QMessageBox.warning(
-                self._main_window,
-                "功能不可用",
-                f"增强版数据导入UI组件加载失败:\n{str(e)}\n\n请确保所有依赖项已正确安装。"
-            )
-            logger.error(f"增强版数据导入UI组件加载失败: {e}")
-
-        except Exception as e:
-            QMessageBox.critical(
-                self._main_window,
-                "错误",
-                f"启动增强版数据导入系统失败:\n{str(e)}"
-            )
-            logger.error(f"启动增强版数据导入系统失败: {e}")
-
-    def _on_batch_import(self) -> None:
-        """批量数据导入（重定向到增强版任务管理）"""
-        try:
-            # 批量导入功能已集成到增强版数据导入系统的任务管理中
-            from gui.enhanced_data_import_launcher import EnhancedDataImportMainWindow
-
-            # 创建增强版数据导入窗口
-            self.enhanced_import_window = EnhancedDataImportMainWindow()
-            self.enhanced_import_window.show()
-
-            # 提示用户使用任务管理功能
-            QMessageBox.information(
-                self._main_window,
-                "功能整合",
-                "批量导入功能已整合到增强版数据导入系统的任务管理中。\n\n请使用'任务管理'选项卡进行批量任务创建和管理。"
-            )
-
-            logger.info("重定向到增强版数据导入系统的任务管理功能")
-
-        except Exception as e:
-            logger.error(f"启动增强版数据导入系统失败: {e}")
-            QMessageBox.warning(self._main_window, "错误", f"无法启动增强版数据导入系统: {e}")
 
     def _on_scheduled_import(self) -> None:
         """定时导入任务管理"""
@@ -2732,14 +2655,19 @@ FactorWeave-Quant  2.0 (重构版本)
 
             dialog = UnifiedDataManagementDialog(self._main_window)
             self.center_dialog(dialog)
+            # R294 修复: 打开后自动切换到"导入历史"标签页(index 2)，
+            # 与菜单项语义一致，避免用户停留在默认"数据概览"页
+            dialog._switch_section('history')
             dialog.exec_()
 
             logger.info("查看导入历史记录")
 
         except ImportError:
-            # 如果对话框不存在，显示开发中提示
-            QMessageBox.information(self._main_window, "提示", "导入历史记录功能正在开发中")
-            logger.info("导入历史记录功能正在开发中")
+            # R294 修复: 原文案"功能正在开发中"与实际不符——功能完整存在于
+            # UnifiedDataManagementDialog 导入历史页(data_management_dialog_unified.py
+            # L265/L339/L1141-1152)，ImportError 仅在该模块损坏时可达，改准确文案
+            QMessageBox.information(self._main_window, "提示", "导入历史功能不可用（组件加载失败）")
+            logger.error("导入历史功能不可用（组件加载失败）")
         except Exception as e:
             logger.error(f"查看导入历史记录失败: {e}")
             QMessageBox.warning(self._main_window, "错误", f"无法查看导入历史记录: {e}")

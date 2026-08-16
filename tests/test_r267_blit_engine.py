@@ -127,6 +127,19 @@ def test_accumulate_resets_at_threshold():
     assert eng._total > 0.0
 
 
+def test_background_cached_property():
+    """R292-HV5：background_cached 反映背景快照状态
+    （False→render→True→invalidate→False，供十字光标等调用方判断是否重建）"""
+    canvas = _make_canvas()
+    eng = BlitEngine(canvas, log_tag='[T]', sample_every=0)
+
+    assert eng.background_cached is False   # 初始未缓存
+    eng.render([_make_artist()])
+    assert eng.background_cached is True    # render 后已缓存
+    eng.invalidate()
+    assert eng.background_cached is False   # 失效后需重建
+
+
 # ---------------------------------------------------------------------------
 # 真实 matplotlib（Agg 后端）冒烟测试：验证 BlitEngine 与真实 API 协作
 # ---------------------------------------------------------------------------

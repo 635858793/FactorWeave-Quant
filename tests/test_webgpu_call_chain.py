@@ -15,39 +15,47 @@ sys.path.insert(0, str(project_root))
 
 
 def test_process_single_batch_call_chain():
-    """测试 _process_single_batch 业务调用链"""
+    """测试 fallback 成交量渲染调用链（原 VolumeDataProcessor._process_single_batch
+    用例迁移：WebGPU 假实现已删除，成交量渲染由 fallback MatplotlibRenderer 承担）"""
     print("=" * 60)
-    print("测试 1: _process_single_batch 调用链")
+    print("测试 1: 成交量渲染调用链")
     print("=" * 60)
 
     try:
-        from core.webgpu.webgpu_renderer import VolumeDataProcessor, GPURendererConfig
+        from core.webgpu.fallback import MatplotlibRenderer
 
-        config = GPURendererConfig()
-        processor = VolumeDataProcessor(config)
+        renderer = MatplotlibRenderer.__new__(MatplotlibRenderer)
+        renderer._initialized = True
+        renderer._update_performance_stats = lambda *a, **k: None
 
         test_volumes = np.array([100, 200, 150, 300, 250, 180, 220, 190, 210, 160])
+        n = len(test_volumes)
 
-        print(f"✓ 输入数据：{len(test_volumes)} 个成交量")
+        print(f"✓ 输入数据：{n} 个成交量")
+
+        test_data = pd.DataFrame({
+            'open': np.full(n, 10.0),
+            'close': np.where(np.arange(n) % 2 == 0, 11.0, 9.0),
+            'high': np.full(n, 12.0),
+            'low': np.full(n, 8.0),
+            'volume': test_volumes
+        })
 
         style = {'color': '#1f77b4', 'alpha': 0.7}
-        vertices, colors, indices = processor._process_single_batch(test_volumes, style, offset=0)
+        ax = MagicMock()
+        ok = renderer.render_volume(ax, test_data, style, x=np.arange(n), use_datetime_axis=False)
 
-        print(f"  ✓ 输出顶点：{len(vertices)} 个值")
-        print(f"  ✓ 输出颜色：{len(colors)} 个值")
-        print(f"  ✓ 柱形数量：{len(vertices) // 8}")
+        print(f"  ✓ 渲染结果：{ok}")
+        print(f"  ✓ 集合数量：{len(ax.add_collection.call_args_list)}")
 
-        expected_vertices = len(test_volumes) * 8
-        expected_colors = len(test_volumes) * 3
+        assert ok, "成交量渲染应成功"
+        assert len(ax.add_collection.call_args_list) > 0, "成交量渲染应添加集合"
 
-        assert len(vertices) == expected_vertices, f"顶点数量错误：{len(vertices)} != {expected_vertices}"
-        assert len(colors) == expected_colors, f"颜色数量错误：{len(colors)} != {expected_colors}"
-
-        print("\n✅ _process_single_batch 调用链测试通过！\n")
+        print("\n✅ 成交量渲染调用链测试通过！\n")
         return True
 
     except Exception as e:
-        print(f"\n❌ _process_single_batch 调用链测试失败：{e}\n")
+        print(f"\n❌ 成交量渲染调用链测试失败：{e}\n")
         import traceback
         traceback.print_exc()
         return False
@@ -118,41 +126,47 @@ def test_render_with_gpu_call_chain():
 
 
 def test_gradient_color_call_chain():
-    """测试渐变颜色调用链"""
+    """测试成交量颜色渲染调用链（原 VolumeDataProcessor 渐变颜色用例迁移：
+    WebGPU 假实现已删除，颜色渲染由 fallback MatplotlibRenderer 承担）"""
     print("=" * 60)
-    print("测试 4: 渐变颜色调用链")
+    print("测试 4: 成交量颜色调用链")
     print("=" * 60)
 
     try:
-        from core.webgpu.webgpu_renderer import VolumeDataProcessor, GPURendererConfig
+        from core.webgpu.fallback import MatplotlibRenderer
 
-        config = GPURendererConfig()
-        processor = VolumeDataProcessor(config)
+        renderer = MatplotlibRenderer.__new__(MatplotlibRenderer)
+        renderer._initialized = True
+        renderer._update_performance_stats = lambda *a, **k: None
 
         test_volumes = np.array([100, 200, 150, 300, 250])
 
-        def gradient_color(normalized):
-            return (normalized, 0.5, 1.0 - normalized)
+        test_data = pd.DataFrame({
+            'open': [10.0, 10.0, 10.0, 10.0, 10.0],
+            'close': [11.0, 9.0, 11.0, 9.0, 11.0],
+            'high': [12.0, 12.0, 12.0, 12.0, 12.0],
+            'low': [8.0, 8.0, 8.0, 8.0, 8.0],
+            'volume': test_volumes
+        })
 
-        style = {'color': gradient_color, 'alpha': 0.7}
+        style = {'up_color': '#ff0000', 'down_color': '#00ff00', 'alpha': 0.7}
 
-        print("✓ 测试渐变颜色回调...")
+        print("✓ 测试成交量颜色渲染...")
 
-        vertices, colors, indices = processor._process_single_batch(test_volumes, style, offset=0)
+        ax = MagicMock()
+        ok = renderer.render_volume(ax, test_data, style, x=np.arange(5),
+                                    use_datetime_axis=False)
 
-        print(f"  ✓ 预计算的 max_volume = {max(test_volumes)}")
+        print(f"  ✓ 渲染结果：{ok}")
 
-        for i in range(len(test_volumes)):
-            normalized = test_volumes[i] / max(test_volumes)
-            expected_color = gradient_color(normalized)
-            actual_color = tuple(colors[i*3:(i+1)*3])
-            print(f"  ✓ volume[{i}]={test_volumes[i]} -> color={actual_color}")
+        assert ok, "成交量颜色渲染应成功"
+        assert len(ax.add_collection.call_args_list) > 0, "渲染后应添加集合"
 
-        print("\n✅ 渐变颜色调用链测试通过！\n")
+        print("\n✅ 成交量颜色调用链测试通过！\n")
         return True
 
     except Exception as e:
-        print(f"\n❌ 渐变颜色调用链测试失败：{e}\n")
+        print(f"\n❌ 成交量颜色调用链测试失败：{e}\n")
         import traceback
         traceback.print_exc()
         return False

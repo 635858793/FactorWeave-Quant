@@ -136,6 +136,9 @@ class BaseMixin:
             self.figure.subplots_adjust(
                 left=0.04, right=0.99, top=0.99, bottom=0.06, hspace=0.00)
             self.canvas.draw_idle()
+            # HV6：初始主题绘制后失效 blit 背景（与 apply_theme 一致）
+            if hasattr(self, '_invalidate_crosshair_background'):
+                self._invalidate_crosshair_background()
         except Exception as e:
             logger.error(f"应用初始主题失败: {str(e)}")
 

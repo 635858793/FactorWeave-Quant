@@ -23,6 +23,11 @@ class ZoomMixin:
         self.canvas.mpl_connect('button_press_event',
                                 self._on_zoom_right_click)
         self.canvas.mpl_connect('scroll_event', self._on_zoom_scroll)
+        # R294: X 轴可见范围变化联动日期刻度标签（缩放/平移后 ticks 随可见
+        # 范围刷新，覆盖框选缩放/右拖平移/滚轮缩放/双击还原全部 set_xlim 路径）。
+        # weak=False 防止 bound method 回调被 GC 回收。
+        self.price_ax.callbacks.connect(
+            'xlim_changed', self._refresh_x_date_ticks, weak=False)
 
     def _on_zoom_press(self, event):
         """处理缩放按下事件"""

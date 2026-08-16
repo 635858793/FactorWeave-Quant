@@ -105,24 +105,26 @@ def _make_widget():
 
 class TestLargeDataNoShrink:
     def test_full_kdata_preserved_after_first_render(self):
-        """5000 条：渲染后 current_kdata=1200（降采样），_full_kdata=5000（完整保留）"""
+        """5000 条：渲染后 current_kdata≤1200（HV4 分桶采样受预算约束），_full_kdata=5000（完整保留）"""
         w = _make_widget()
         w.update_chart({'kdata': make_kdata(5000)})
 
         assert w.current_kdata is not None
-        assert len(w.current_kdata) == 1200  # 降采样后渲染数据
+        assert len(w.current_kdata) <= 1200  # 降采样后渲染数据（峰谷去重可能略少）
         assert len(w._full_kdata) == 5000    # 完整数据未被破坏
 
     def test_indicator_switch_does_not_shrink_further(self):
         """模拟真实链路：指标切换(on_indicator_selected→_on_indicator_changed→update_chart)
-        连续 3 次后 current_kdata 恒定 1200，不再缩短"""
+        连续 3 次后 current_kdata 恒定，不再缩短（HV4 分桶采样 ≤预算且切换不缩水）"""
         w = _make_widget()
         w.update_chart({'kdata': make_kdata(5000)})
+        first_len = len(w.current_kdata)
+        assert first_len <= 1200
 
         for inds in (['MA'], ['MACD'], ['MA', 'MACD']):
             w.on_indicator_selected(inds)
 
-        assert len(w.current_kdata) == 1200       # 恒定，未继续缩水
+        assert len(w.current_kdata) == first_len  # 恒定，未继续缩水
         assert len(w._full_kdata) == 5000         # 完整数据始终保留
         assert len(w._get_render_kdata()) == 5000  # 重渲染数据源为完整数据
 
@@ -134,7 +136,7 @@ class TestLargeDataNoShrink:
         util_mod.UtilityMixin.on_indicator_selected(w, ['MA'])
 
         assert len(w._get_render_kdata()) == 3000
-        assert len(w.current_kdata) == 1200
+        assert len(w.current_kdata) <= 1200
 
 
 # ==================== 2. ≤1200 条（365条日线场景）：行为完全不变 ====================

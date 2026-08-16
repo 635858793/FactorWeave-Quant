@@ -1,4 +1,4 @@
-"""测试成交量渲染"""
+"""测试成交量渲染（WebGPU 假实现已删除，渲染统一走 fallback MatplotlibRenderer）"""
 import sys
 sys.path.insert(0, r'D:\DevelopTool\FreeCode\HIkyuu-UI\hikyuu-ui')
 
@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
-from core.webgpu.webgpu_renderer import WebGPURenderer, GPURendererConfig, GPUBackend
+from core.webgpu.fallback import MatplotlibRenderer
 
 def test_volume_rendering():
     print("=" * 60)
@@ -25,12 +25,9 @@ def test_volume_rendering():
     })
 
     # 创建渲染器
-    config = GPURendererConfig()
-    renderer = WebGPURenderer(config)
-
-    # 初始化
-    success = renderer.initialize()
-    print(f"渲染器初始化: {success}")
+    renderer = MatplotlibRenderer.__new__(MatplotlibRenderer)
+    renderer._initialized = True
+    renderer._update_performance_stats = lambda *a, **k: None
 
     # 创建图表
     fig, (price_ax, volume_ax) = plt.subplots(2, 1, figsize=(12, 8))
@@ -46,7 +43,8 @@ def test_volume_rendering():
     # 渲染K线
     print(f"\n渲染K线到 price_ax...")
     style = {}
-    result1 = renderer.render_candlesticks(price_ax, kdata, style)
+    result1 = renderer.render_candlesticks(price_ax, kdata, style,
+                                           x=np.arange(len(kdata)), use_datetime_axis=False)
     print(f"K线渲染结果: {result1}")
 
     print(f"\n渲染后 price_ax limits:")
@@ -62,7 +60,8 @@ def test_volume_rendering():
 
     # 渲染成交量
     print(f"\n渲染成交量到 volume_ax...")
-    result2 = renderer.render_volume(volume_ax, kdata, style)
+    result2 = renderer.render_volume(volume_ax, kdata, style,
+                                     x=np.arange(len(kdata)), use_datetime_axis=False)
     print(f"成交量渲染结果: {result2}")
 
     print(f"\n渲染后 volume_ax limits:")

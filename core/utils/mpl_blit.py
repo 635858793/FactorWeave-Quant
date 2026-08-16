@@ -47,6 +47,30 @@ class BlitEngine:
         """
         self._background = None
 
+    @property
+    def background_cached(self) -> bool:
+        """背景快照是否已缓存。
+
+        R292-HV5 统一 blit：调用方（如十字光标）需要在 render 前判断"本次是否将
+        重建背景"——重建前可执行专属预处理（如隐藏临时元素以保证背景干净），
+        且"背景已缓存"时可直接走 blit 快路径而不触发全画布 draw。
+        """
+        return self._background is not None
+
+    def refresh_background(self):
+        """同步背景快照为当前画布像素（render 成功后调用）。
+
+        HV6 tick 增量渲染：集合 verts 更新后 render 只重绘了本次 artists，
+        背景快照仍停留在旧像素；若不同步，下一次十字光标 blit 会
+        restore_region 回旧快照，导致 bar 内 tick 更新像素级回退。
+        """
+        try:
+            if self.canvas is None or self._background is None:
+                return
+            self._background = self.canvas.copy_from_bbox(self._bbox_getter())
+        except Exception:
+            pass
+
     def render(self, artists):
         """执行 blit 局部重绘：restore_region + draw_artist + blit。
 

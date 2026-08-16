@@ -111,6 +111,12 @@ class DialogCoordinator(BaseCoordinator):
             dialog.finished.connect(
                 lambda: self._on_dialog_closed(cache_key)
             )
+            # R293 修复: BaseDialog 子类设 WA_DeleteOnClose，关闭后 C++ 对象被删除，
+            # 但 _dialog_cache 仍持有死引用 → 下次 show_dialog L74 isVisible() 抛
+            # RuntimeError 且对话框无法重开; destroyed 信号触发时同步从缓存清除
+            dialog.destroyed.connect(
+                lambda: self._dialog_cache.pop(cache_key, None)
+            )
             
             logger.info(f"Dialog {dialog_type} created and shown")
             return dialog

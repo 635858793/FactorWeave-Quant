@@ -145,7 +145,9 @@ class WebGPUChartRenderer(BaseChartRenderer):
         # 如果WebGPU渲染失败或未使用，调用父类matplotlib实现
         if not webgpu_success:
             # 修复：传递use_datetime_axis参数给父类
-            super().render_candlesticks(ax, data, style, x, use_datetime_axis)
+            # HV6：透传父类 collections 返回（tick 增量渲染依赖引用保存）
+            return super().render_candlesticks(ax, data, style, x, use_datetime_axis)
+        return None
 
     def render_volume(self, ax, data: pd.DataFrame, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):
         """
@@ -181,7 +183,9 @@ class WebGPUChartRenderer(BaseChartRenderer):
         # 如果WebGPU渲染失败或未使用，调用父类matplotlib实现
         if not webgpu_success:
             # 直接使用原有matplotlib实现
-            super().render_volume(ax, data, style, x, use_datetime_axis)
+            # HV6：透传父类 collections 返回（tick 增量渲染依赖引用保存）
+            return super().render_volume(ax, data, style, x, use_datetime_axis)
+        return None
 
     def render_line(self, ax, data: pd.Series, style: Dict[str, Any] = None, x: np.ndarray = None, use_datetime_axis: bool = True):
         """

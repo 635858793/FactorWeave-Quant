@@ -124,7 +124,6 @@ class TestCrosshairBlit:
         c._crosshair_text = None
         c._crosshair_xtext = None
         c._crosshair_ytext = None
-        c._blit_background = None
         c._hide_crosshair_elements = MagicMock()
         return c
 
@@ -135,11 +134,14 @@ class TestCrosshairBlit:
         line.axes = MagicMock()
         return line
 
-    def test_invalidate_background_sets_none(self):
+    def test_invalidate_clears_engine_background(self):
+        """R292-HV5 统一 blit：失效钩子委托 BlitEngine，背景缓存清除后下次重建"""
         c = self._make()
-        c._blit_background = object()
+        assert c._blit_crosshair() is True
+        engine = c._ensure_blit_engine()
+        assert engine.background_cached
         c._invalidate_crosshair_background()
-        assert c._blit_background is None
+        assert engine.background_cached is False
 
     def test_blit_builds_background_then_restore_blit(self):
         """首次 blit：隐藏元素→draw→copy背景→restore→draw_artist→blit"""
@@ -175,9 +177,34 @@ class TestCrosshairBlit:
 
     def test_clear_elements_invalidates_background(self):
         c = self._make(lines={})
-        c._blit_background = object()
+        assert c._blit_crosshair() is True
+        engine = c._ensure_blit_engine()
+        assert engine.background_cached
         c._clear_crosshair_elements()
-        assert c._blit_background is None
+        assert engine.background_cached is False
+
+    def test_blit_uses_single_engine_instance(self):
+        """R292-HV5 统一 blit：多次调用复用同一 BlitEngine 实例（单一实现）"""
+        c = self._make()
+        assert c._blit_crosshair() is True
+        e1 = c._ensure_blit_engine()
+        assert c._blit_crosshair() is True
+        assert c._ensure_blit_engine() is e1
+
+    def test_background_rebuild_hides_crosshair_first(self):
+        """背景重建前隐藏十字元素（保证背景干净）；背景已缓存时不再隐藏"""
+        c = self._make()
+        c._blit_crosshair()
+        assert c._hide_crosshair_elements.call_count == 1
+        c._hide_crosshair_elements.reset_mock()
+        c._blit_crosshair()  # 背景已缓存 → 不再隐藏
+        assert c._hide_crosshair_elements.call_count == 0
+
+    def test_invalidate_before_engine_created_no_error(self):
+        """引擎尚未创建时调用失效钩子不抛错（zoom/rendering 全量重绘钩子先行场景）"""
+        c = self._make()
+        c._invalidate_crosshair_background()  # 不抛异常
+        assert getattr(c, '_blit_engine', None) is None  # 引擎未被创建
 
 
 # ==================== 3. 缩放路径性能优化 ====================
